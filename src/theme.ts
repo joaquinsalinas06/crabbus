@@ -52,6 +52,15 @@ export const ctxColor = (pct: number): number => (pct < 50 ? C.mint : pct < 75 ?
 /** A usage window's short name: five_hour -> "5h", seven_day -> "week", a gateway's spend_limit -> "spend". */
 export const limitName = (kind: string): string => (kind === 'five_hour' ? '5h' : kind === 'seven_day' ? 'week' : kind === 'spend_limit' ? 'spend' : kind.replace(/_/g, ' '))
 
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/** When a window resets, in local time: "21:10" within the next 24 hours, else "Sat 13:00". */
+export const resetClock = (at: number, now: number): string => {
+  const d = new Date(at)
+  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return at - now < 24 * 3_600_000 ? hm : `${DAYS[d.getDay()]} ${hm}`
+}
+
 /** Time left until a reset: "4d 6h", "2h 13m", "9m"; "now" once it has passed. */
 export const untilTxt = (ms: number): string => {
   const m = Math.floor(ms / 60000)
