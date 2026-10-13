@@ -5,7 +5,7 @@
   "color": "#f78166",
   "when": {
     "tool": "Bash",
-    "input": "\\bgit\\b(\\s+-C\\s+\\S+|\\s+-c\\s+\\S+)*\\s+commit\\b"
+    "input": "\\bgit\\b[^|;&\\n]{0,120}\\scommit\\b"
   },
   "priority": 60,
   "duration": 2500,

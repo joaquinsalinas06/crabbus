@@ -77,12 +77,27 @@ async function record($: EngineInterface, f: (s: BusState, t: number) => BusStat
   await update($, bus, s => f(s, t))
 }
 
-/** Where the user's design files live: `<config dir>/crabbus/*.json`. */
+/**
+ * Where the user's design files live: `<config dir>/crabbus/*.json`. Designs made before the rename sit in
+ * `<config dir>/agent-bus/`: the first time the new folder is missing they are copied over (the old folder
+ * is left as it was), so nobody's crabs lose their costumes on upgrade.
+ */
 async function designsDir($: EngineInterface): Promise<string> {
   if (designDir) return designDir
   const cfg = await $.env.get('CLAUDE_CONFIG_DIR')
   const home = await $.env.get('HOME')
-  designDir = `${cfg ?? `${home ?? '.'}/.claude`}/crabbus`
+  const base = cfg ?? `${home ?? '.'}/.claude`
+  const dir = `${base}/crabbus`
+  const legacy = `${base}/agent-bus`
+  try {
+    if (!(await $.fs.exists(dir)) && (await $.fs.exists(legacy))) {
+      const old = (await $.fs.list(legacy)).filter(x => x.kind === 'file' && !x.isLink && x.name.endsWith('.json')).slice(0, 200)
+      for (const x of old) await $.fs.write(`${dir}/${x.name}`, String(await $.fs.read(`${legacy}/${x.name}`)))
+    }
+  } catch {
+    // a failed copy leaves the old folder intact; the user can still copy it by hand
+  }
+  designDir = dir
   return designDir
 }
 

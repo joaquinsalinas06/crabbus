@@ -161,8 +161,74 @@ const palette = (v: unknown, where: string): Record<string, number> => {
   return out
 }
 
+/**
+ * Why a pattern could backtrack catastrophically (ReDoS), or null. Design files are shared, and their
+ * patterns run against tool input on every tool call, so anything that can take exponential time is
+ * refused: a repeated group that itself repeats (`(a+)+`), a repeated alternation (`(a|ab)*`) and
+ * backreferences. Repetition of single atoms (`\s+`, `[^;]{0,80}`) stays linear and is allowed.
+ */
+export const unsafePattern = (src: string): string | null => {
+  type Frame = { repeats: boolean; alt: boolean }
+  const stack: Frame[] = [{ repeats: false, alt: false }]
+  // the quantifier at i: [chars it spans, whether it repeats more than once]
+  const quant = (i: number): [number, boolean] => {
+    const ch = src[i]
+    let n = 0
+    let rep = false
+    if (ch === '*' || ch === '+') { n = 1; rep = true }
+    else if (ch === '?') n = 1
+    else if (ch === '{') {
+      const m = /^\{(\d+)(,(\d*))?\}/.exec(src.slice(i))
+      if (m) { n = m[0].length; rep = m[2] === undefined ? Number(m[1]) > 1 : m[3] === '' || Number(m[3]) > 1 }
+    }
+    if (n > 0 && src[i + n] === '?') n++ // lazy
+    return [n, rep]
+  }
+  let i = 0
+  while (i < src.length) {
+    const ch = src[i] as string
+    const top = stack[stack.length - 1] as Frame
+    if (ch === '\\') {
+      const nx = src[i + 1] ?? ''
+      if (/[1-9]/.test(nx) || (nx === 'k' && src[i + 2] === '<')) return 'backreferences are not allowed'
+      i += 2
+    } else if (ch === '[') {
+      i++
+      if (src[i] === '^') i++
+      if (src[i] === ']') i++
+      while (i < src.length && src[i] !== ']') i += src[i] === '\\' ? 2 : 1
+      i++
+    } else if (ch === '(') {
+      stack.push({ repeats: false, alt: false })
+      i++
+      if (src[i] === '?') { const m = /^\?(?::|=|!|<=|<!|<[A-Za-z_][A-Za-z0-9_]*>)/.exec(src.slice(i)); i += m ? m[0].length : 1 }
+      continue
+    } else if (ch === '|') {
+      top.alt = true
+      i++
+      continue
+    } else if (ch === ')') {
+      if (stack.length === 1) return null // unbalanced: RegExp itself reports it
+      const g = stack.pop() as Frame
+      const [n, rep] = quant(i + 1)
+      if (rep && g.repeats) return 'a repeated group contains another repetition, as in (a+)+ (rewrite it with a single quantifier, e.g. [^;]{0,80})'
+      if (rep && g.alt) return 'a repeated group contains an alternation, as in (a|ab)* (repeat a character class instead)'
+      const parent = stack[stack.length - 1] as Frame
+      parent.repeats ||= g.repeats || rep
+      i += 1 + n
+      continue
+    } else i++
+    const [n, rep] = quant(i)
+    if (rep) top.repeats = true
+    i += n
+  }
+  return null
+}
+
 const regex = (v: unknown, where: string): RegExp => {
   if (typeof v !== 'string' || v.length === 0 || v.length > 200) return bad(`${where}: must be a string of 1 to 200 characters`)
+  const why = unsafePattern(v)
+  if (why) return bad(`${where}: "${v}" could hang Claude Code on some inputs: ${why}`)
   try {
     return new RegExp(v, 'i')
   } catch {

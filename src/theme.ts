@@ -108,4 +108,14 @@ export const meter = (pct: number, width: number): [string, string] => {
   return ['━'.repeat(n), '─'.repeat(width - n)]
 }
 
-export const fit = (s: string, w: number): string => (w <= 0 ? '' : s.length <= w ? s : `${s.slice(0, Math.max(0, w - 1))}…`)
+/**
+ * Text that came from agents, transcripts or design files, made safe to paint: C0/C1 control characters
+ * (ESC and friends, which could move the cursor or rewrite the screen) and bidi overrides (which could
+ * reorder what is shown) are dropped; tabs and newlines become spaces.
+ */
+export const clean = (s: string): string => s.replace(/[\t\n\r]/g, ' ').replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, '')
+
+export const fit = (s: string, w: number): string => {
+  const t = clean(s)
+  return w <= 0 ? '' : t.length <= w ? t : `${t.slice(0, Math.max(0, w - 1))}…`
+}

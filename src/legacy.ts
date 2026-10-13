@@ -222,12 +222,21 @@ const normalizeCostume = (raw: Obj): Obj => {
   return out
 }
 
+// `git commit` patterns the design skill used to write: nested repetition, refused since v0.5 (see
+// unsafePattern in pack.ts). They become an equivalent pattern with a single bounded repetition.
+const SAFE_COMMIT = '\\bgit\\b[^|;&\\n]{0,120}\\scommit\\b'
+const LEGACY_COMMIT: readonly string[] = [
+  '\\bgit\\b(\\s+-C\\s+\\S+|\\s+-c\\s+\\S+)*\\s+commit\\b',
+  '\\bgit\\b(\\s+-C\\s+\\S+)*\\s+commit\\b',
+]
+const safeInput = (v: unknown): unknown => (typeof v === 'string' && LEGACY_COMMIT.includes(v) ? SAFE_COMMIT : v)
+
 const normalizeCond = (v: unknown): unknown => {
   if (!isObj(v)) return v
   const out: Obj = {}
   for (const [k, val] of Object.entries(v)) {
     if (k === 'herramienta') out['tool'] = val
-    else if (k === 'entrada') out['input'] = val
+    else if (k === 'entrada' || k === 'input') out['input'] = safeInput(val)
     else if (k === 'estado' || k === 'state') out['state'] = mapState(val)
     else if (k === 'azar') out['chance'] = val
     else out[k] = val
