@@ -124,10 +124,29 @@ Ask for a costume in plain words and the bundled **`design` skill** draws it:
 
 > *"Give the reviewer a capybara hat"* · *"a Christmas costume for everyone"* · *"make it jump when it runs `git commit`"*
 
-<p align="center"><img src="assets/costumes.png" alt="A capybara-with-a-yuzu hat drawn by the design skill, in every action on dark and light terminals" width="100%"></p>
+<p align="center"><img src="assets/custom-crew.gif" alt="Five costumes made with the design skill (capybara hood, capybara fisher, french, dino, christmas) going through every action, including a custom git commit celebration" width="100%"></p>
 
-*The capybara above came from one sentence. Try it yourself with
-`/costume import examples/capybara.crab.json`.*
+Every crab above was made by asking the skill, and all of them ship in [`examples/`](examples):
+
+| File | What it adds | Kind |
+|---|---|---|
+| [`capybara.crab.json`](examples/capybara.crab.json) | a plush capybara hood | costume |
+| [`capybara-fisher.crab.json`](examples/capybara-fisher.crab.json) | a crochet capybara bucket hat | costume |
+| [`french.crab.json`](examples/french.crab.json) | grey beret and curly mustache | costume |
+| [`dino.crab.json`](examples/dino.crab.json) | hood, suit and tail | costume |
+| [`christmas.crab.json`](examples/christmas.crab.json) | santa hat and scarf | costume |
+| [`commit.crab.json`](examples/commit.crab.json) | confetti and a jump whenever an agent runs `git commit` | action |
+| [`rules.json`](examples/rules.json) | who wears what: by agent description (`dino`, `fisher`…) and everyone in Christmas from Dec 1–31 | rules |
+
+```bash
+/costume import examples/dino.crab.json   # validated again on import
+```
+
+The skill handles more than costumes:
+
+- **Actions:** a new animation tied to a tool call, such as `git commit` in the table above.
+- **Rules:** who wears what, matched by agent type, name, description, model or date range.
+- **Labels:** rename any state (`"thinking": "… pondering"`).
 
 - Every costume, piece and action is **JSON data**, never code, kept in
   `~/.claude/crabbus/` (`/costume folder` prints the exact path).

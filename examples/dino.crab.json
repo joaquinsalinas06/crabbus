@@ -1,0 +1,330 @@
+{
+  "type": "bundle",
+  "items": [
+    {
+      "type": "piece",
+      "id": "dino-hood",
+      "name": "dino hood",
+      "slot": "head",
+      "anchor": "head",
+      "layers": [
+        {
+          "pos": [
+            0,
+            1
+          ],
+          "drawings": {
+            "front": [
+              "........gg........",
+              "...g...gGGg...g...",
+              "...ghhhhhhhhhhg...",
+              "..shkkhhhhhhkkhs..",
+              "..sddRrrrrrrRdds..",
+              "..s..w.w..w.w..s.."
+            ],
+            "back": [
+              "........gg........",
+              "...g...gGGg...g...",
+              "...ghhhhgghhhhg...",
+              "..sddddgGGgdddds..",
+              "..sdddddggddddds..",
+              "..sdddddddddddds.."
+            ]
+          },
+          "palette": {
+            "g": "#b6e35a",
+            "G": "#8fc23a",
+            "h": "#2f7a3d",
+            "d": "#1f5a2c",
+            "s": "#143d1e",
+            "k": "#0f140c",
+            "r": "#c0313b",
+            "R": "#7e1d26",
+            "w": "#f1efe4"
+          },
+          "anim": {
+            "spin": [
+              {
+                "steps": [
+                  {
+                    "d": "front"
+                  },
+                  {
+                    "d": "front"
+                  },
+                  {
+                    "d": "front"
+                  },
+                  {
+                    "d": "back"
+                  },
+                  {
+                    "d": "back"
+                  },
+                  {
+                    "d": "back"
+                  },
+                  {
+                    "d": "back"
+                  },
+                  {
+                    "d": "back"
+                  },
+                  {
+                    "d": "front"
+                  },
+                  {
+                    "d": "front"
+                  },
+                  {
+                    "d": "front"
+                  },
+                  {
+                    "d": "front"
+                  }
+                ]
+              }
+            ],
+            "*": [
+              {
+                "fixed": {
+                  "d": "front"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "piece",
+      "id": "dino-suit",
+      "name": "dino suit",
+      "slot": "torso",
+      "anchor": "body",
+      "layers": [
+        {
+          "pos": [
+            0,
+            7
+          ],
+          "drawings": {
+            "front": [
+              "...s..........s...",
+              "...s..........s...",
+              "...s..........s...",
+              "...sdllllLlllds...",
+              "....sLllllllLs...."
+            ],
+            "back": [
+              "...sdddhggdddds...",
+              "...sddhgGGgddds...",
+              "...sdddhggdddds...",
+              "...sddhgGGgddds...",
+              "....sdddggddds...."
+            ]
+          },
+          "palette": {
+            "g": "#b6e35a",
+            "G": "#8fc23a",
+            "h": "#2f7a3d",
+            "d": "#1f5a2c",
+            "s": "#143d1e",
+            "k": "#0f140c",
+            "r": "#c0313b",
+            "R": "#7e1d26",
+            "w": "#f1efe4",
+            "l": "#b6e35a",
+            "L": "#93c543"
+          },
+          "anim": {
+            "spin": [
+              {
+                "steps": [
+                  {
+                    "d": "front"
+                  },
+                  {
+                    "d": "front"
+                  },
+                  {
+                    "d": "front"
+                  },
+                  {
+                    "d": "back"
+                  },
+                  {
+                    "d": "back"
+                  },
+                  {
+                    "d": "back"
+                  },
+                  {
+                    "d": "back"
+                  },
+                  {
+                    "d": "back"
+                  },
+                  {
+                    "d": "front"
+                  },
+                  {
+                    "d": "front"
+                  },
+                  {
+                    "d": "front"
+                  },
+                  {
+                    "d": "front"
+                  }
+                ]
+              }
+            ],
+            "*": [
+              {
+                "fixed": {
+                  "d": "front"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "piece",
+      "id": "dino-tail",
+      "name": "dino tail",
+      "slot": "behind",
+      "anchor": "body",
+      "layers": [
+        {
+          "pos": [
+            0,
+            9
+          ],
+          "drawings": {
+            "up": [
+              "...............g..",
+              "..............dhg.",
+              "..............dds.",
+              "..............ss.."
+            ],
+            "down": [
+              "..................",
+              "...............g..",
+              "..............dhsg",
+              "..............sss."
+            ],
+            "back": [
+              "..................",
+              "..................",
+              "........dd........",
+              "........hd........",
+              ".......gssg......."
+            ]
+          },
+          "palette": {
+            "g": "#b6e35a",
+            "G": "#8fc23a",
+            "h": "#2f7a3d",
+            "d": "#1f5a2c",
+            "s": "#143d1e",
+            "k": "#0f140c",
+            "r": "#c0313b",
+            "R": "#7e1d26",
+            "w": "#f1efe4"
+          },
+          "anim": {
+            "spin": [
+              {
+                "steps": [
+                  {
+                    "d": "up"
+                  },
+                  {
+                    "d": "up"
+                  },
+                  {
+                    "d": "up"
+                  },
+                  {
+                    "d": "back"
+                  },
+                  {
+                    "d": "back"
+                  },
+                  {
+                    "d": "back"
+                  },
+                  {
+                    "d": "back"
+                  },
+                  {
+                    "d": "back"
+                  },
+                  {
+                    "d": "up"
+                  },
+                  {
+                    "d": "up"
+                  },
+                  {
+                    "d": "up"
+                  },
+                  {
+                    "d": "up"
+                  }
+                ]
+              }
+            ],
+            "walk": [
+              {
+                "every": 2,
+                "steps": [
+                  {
+                    "d": "up"
+                  },
+                  {
+                    "d": "down"
+                  }
+                ]
+              }
+            ],
+            "sleep": [
+              {
+                "fixed": {
+                  "d": "down"
+                }
+              }
+            ],
+            "*": [
+              {
+                "every": 3,
+                "steps": [
+                  {
+                    "d": "up"
+                  },
+                  {
+                    "d": "down"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "costume",
+      "id": "dino",
+      "name": "dino",
+      "color": "#5fb34a",
+      "pieces": [
+        "dino-hood",
+        "dino-suit",
+        "dino-tail"
+      ]
+    }
+  ]
+}

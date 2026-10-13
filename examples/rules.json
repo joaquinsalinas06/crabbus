@@ -1,0 +1,48 @@
+{
+  "type": "rules",
+  "active": [
+    "dino",
+    "fable",
+    "heavy",
+    "careful",
+    "medium",
+    "light",
+    "explore",
+    "capybara",
+    "capybara-fisher",
+    "french"
+  ],
+  "rules": [
+    {
+      "if": {
+        "description": "dino"
+      },
+      "costume": "dino"
+    },
+    {
+      "if": {
+        "description": "fisher"
+      },
+      "costume": "capybara-fisher"
+    },
+    {
+      "if": {
+        "description": "capybara"
+      },
+      "costume": "capybara"
+    },
+    {
+      "if": {
+        "description": "french"
+      },
+      "costume": "french"
+    },
+    {
+      "if": {
+        "from": "12-01",
+        "to": "12-31"
+      },
+      "costume": "christmas"
+    }
+  ]
+}

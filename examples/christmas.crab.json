@@ -1,0 +1,93 @@
+{
+  "type": "bundle",
+  "items": [
+    {
+      "type": "piece",
+      "id": "santa-hat",
+      "name": "santa hat",
+      "slot": "head",
+      "anchor": "head",
+      "layers": [
+        {
+          "pos": [
+            0,
+            1
+          ],
+          "drawings": {
+            "a": [
+              "........rrgww.....",
+              "......rrrr.wg.....",
+              ".....rrrrrr.......",
+              "....rrrrrrrr......",
+              "...gwwwwwwwwwwg..."
+            ],
+            "b": [
+              ".........rrgww....",
+              "......rrrrr.wg....",
+              ".....rrrrrr.......",
+              "....rrrrrrrr......",
+              "...gwwwwwwwwwwg..."
+            ]
+          },
+          "palette": {
+            "r": "#c62828",
+            "w": "#f4f3ee",
+            "g": "#b7b5ad"
+          },
+          "anim": {
+            "*": [
+              {
+                "every": 3,
+                "steps": [
+                  {
+                    "d": "a"
+                  },
+                  {
+                    "d": "b"
+                  }
+                ]
+              }
+            ],
+            "sleep": []
+          }
+        }
+      ]
+    },
+    {
+      "type": "piece",
+      "id": "scarf",
+      "name": "scarf",
+      "slot": "neck",
+      "anchor": "body",
+      "layers": [
+        {
+          "pos": [
+            0,
+            10
+          ],
+          "drawings": {
+            "a": [
+              "...vwvwvwvwvwv....",
+              "....wv............",
+              ".....v............"
+            ]
+          },
+          "palette": {
+            "v": "#1b5e20",
+            "w": "#f4f3ee"
+          }
+        }
+      ]
+    },
+    {
+      "type": "costume",
+      "id": "christmas",
+      "name": "christmas",
+      "color": "#c62828",
+      "pieces": [
+        "santa-hat",
+        "scarf"
+      ]
+    }
+  ]
+}

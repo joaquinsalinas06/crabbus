@@ -1,0 +1,143 @@
+{
+  "type": "bundle",
+  "items": [
+    {
+      "type": "piece",
+      "id": "beret",
+      "name": "grey beret",
+      "slot": "head",
+      "anchor": "head",
+      "layers": [
+        {
+          "pos": [
+            0,
+            3
+          ],
+          "drawings": {
+            "a": [
+              ".........k........",
+              ".....rrrrrrrrr....",
+              "...rrrrrrrrrrrrr.."
+            ]
+          },
+          "palette": {
+            "r": "#7d8187",
+            "k": "#3a3d42"
+          }
+        }
+      ]
+    },
+    {
+      "type": "piece",
+      "id": "mustache",
+      "name": "curly mustache",
+      "slot": "face.mouth",
+      "anchor": "face",
+      "layers": [
+        {
+          "pos": [
+            0,
+            9
+          ],
+          "drawings": {
+            "rizado": [
+              ".......kkkk.......",
+              "....k.kk..kk.k....",
+              ".....kk....kk....."
+            ],
+            "abajo": [
+              ".......kkkk.......",
+              "......kk..kk......",
+              "....kkk....kkk...."
+            ],
+            "torcido": [
+              ".......kkkk.......",
+              "....k.kk..kk......",
+              ".....kk....kkk...."
+            ]
+          },
+          "palette": {
+            "k": "#2b1b12"
+          },
+          "anim": {
+            "*": [
+              {
+                "period": 18,
+                "at": {
+                  "0": {
+                    "d": "abajo"
+                  },
+                  "1": {
+                    "d": "abajo"
+                  }
+                }
+              }
+            ],
+            "thinking": [
+              {
+                "every": 3,
+                "steps": [
+                  {
+                    "d": "rizado"
+                  },
+                  {
+                    "d": "torcido"
+                  }
+                ]
+              }
+            ],
+            "writing": [
+              {
+                "every": 2,
+                "steps": [
+                  {
+                    "d": "rizado"
+                  },
+                  {
+                    "d": "abajo"
+                  }
+                ]
+              }
+            ],
+            "done": [
+              {
+                "steps": [
+                  {
+                    "d": "rizado"
+                  },
+                  {
+                    "d": "abajo"
+                  }
+                ]
+              }
+            ],
+            "error": [
+              {
+                "fixed": {
+                  "d": "abajo"
+                }
+              }
+            ],
+            "sleep": [
+              {
+                "fixed": {
+                  "d": "abajo"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "costume",
+      "id": "french",
+      "name": "french",
+      "color": "#7d8187",
+      "pieces": [
+        "beret",
+        "mustache"
+      ]
+    }
+  ]
+}

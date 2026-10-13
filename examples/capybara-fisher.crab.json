@@ -1,0 +1,106 @@
+{
+  "type": "bundle",
+  "items": [
+    {
+      "type": "piece",
+      "id": "capybara-bucket-hat",
+      "name": "crochet capybara bucket hat",
+      "slot": "head",
+      "anchor": "head",
+      "layers": [
+        {
+          "pos": [
+            0,
+            2
+          ],
+          "drawings": {
+            "a": [
+              ".....cccccccc.....",
+              "....ccKccccKcc....",
+              "....cccnnnnccc....",
+              "..bbbbbnyynbbbbb.."
+            ]
+          },
+          "palette": {
+            "c": "#cbb79c",
+            "b": "#a8957c",
+            "K": "#2a1a10",
+            "n": "#6e2b1e",
+            "y": "#2a1a10"
+          }
+        },
+        {
+          "pos": [
+            0,
+            1
+          ],
+          "drawings": {
+            "quietas": [
+              "...ee........ee...",
+              "...ee........ee..."
+            ],
+            "mueve": [
+              "..ee..........ee..",
+              "...ee........ee..."
+            ]
+          },
+          "palette": {
+            "e": "#6e2b1e"
+          },
+          "anim": {
+            "*": [
+              {
+                "every": 4,
+                "steps": [
+                  {
+                    "d": "quietas"
+                  },
+                  {
+                    "d": "mueve"
+                  }
+                ]
+              }
+            ],
+            "done": [
+              {
+                "steps": [
+                  {
+                    "d": "quietas"
+                  },
+                  {
+                    "d": "mueve"
+                  }
+                ]
+              }
+            ],
+            "sleep": []
+          }
+        },
+        {
+          "pos": [
+            0,
+            1
+          ],
+          "drawings": {
+            "a": [
+              ".......oog........"
+            ]
+          },
+          "palette": {
+            "o": "#f39c12",
+            "g": "#4caf50"
+          }
+        }
+      ]
+    },
+    {
+      "type": "costume",
+      "id": "capybara-fisher",
+      "name": "capybara fisher",
+      "color": "#cbb79c",
+      "pieces": [
+        "capybara-bucket-hat"
+      ]
+    }
+  ]
+}
