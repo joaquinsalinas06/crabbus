@@ -167,11 +167,16 @@ const palette = (v: unknown, where: string): Record<string, number> => {
  * - no repeated group at all (`(ab)+`, `(a?){3}`): repeat a single character or class instead;
  * - no backreferences;
  * - at most MAX_REPEATS repetitions (*, +, {n,m}) in the whole pattern, since each overlapping one
- *   multiplies the work (eight `\s*` in a row take minutes on 60 spaces).
+ *   multiplies the work (eight `\s*` in a row take minutes on 60 spaces);
+ * - at most MAX_CHOICES ways to match: choices in sequence multiply (an optional part doubles them, a
+ *   group with three alternatives triples them), alternatives of one group add up. So a long
+ *   alternation like `\b(pytest|vitest|jest|…)\b` is fine, while chains like `a?a?a?…aaa…b` or
+ *   `(a|a)(a|a)(a|a)…b`, which grow exponentially, are refused.
  * Character classes follow JavaScript's rules: `[]` is empty and `[^]` is any character, so the first
  * `]` always closes the class (reading it as PCRE does let `[^](a+)+]` slip through).
  */
 const MAX_REPEATS = 2
+const MAX_CHOICES = 64
 export const unsafePattern = (src: string): string | null => {
   // the quantifier at i: [chars it spans, whether it repeats more than once]
   const quant = (i: number): [number, boolean] => {
@@ -188,6 +193,12 @@ export const unsafePattern = (src: string): string | null => {
     return [n, rep]
   }
   let repeats = 0
+  // ways to match, per open group: `done` adds up its finished alternatives, `cur` multiplies along the
+  // alternative being read. [0] is the whole pattern.
+  type Ways = { done: number; cur: number }
+  const stack: Ways[] = [{ done: 0, cur: 1 }]
+  const top = (): Ways => stack[stack.length - 1] as Ways
+  const cap = (x: number): number => Math.min(x, 1e9)
   let i = 0
   while (i < src.length) {
     const ch = src[i] as string
@@ -203,13 +214,26 @@ export const unsafePattern = (src: string): string | null => {
     } else if (ch === ')') {
       group = true
       i++
-    } else if (ch === '(' || ch === '|') {
+    } else if (ch === '(') {
+      stack.push({ done: 0, cur: 1 })
       i++
       continue // nothing to repeat yet; a quantifier right after is a syntax error RegExp reports
+    } else if (ch === '|') {
+      const t = top()
+      t.done = cap(t.done + t.cur)
+      t.cur = 1
+      i++
+      continue
     } else i++
     const [n, rep] = quant(i)
     if (group && rep) return 'a group cannot be repeated (repeat a single character or class instead, e.g. [^;]{0,80})'
     if (rep && ++repeats > MAX_REPEATS) return `more than ${MAX_REPEATS} repetitions (*, +, {n,m}) in one pattern`
+    // the item just read matches in `w` ways; optional, it also matches as nothing
+    let w = 1
+    if (group && stack.length > 1) { const g = stack.pop() as Ways; w = cap(g.done + g.cur) }
+    if (n > 0 && !rep) w = cap(w + 1)
+    top().cur = cap(top().cur * w)
+    if (top().done + top().cur > MAX_CHOICES) return `too many ways to match (choices in a row multiply; at most ${MAX_CHOICES})`
     i += n
   }
   return null
