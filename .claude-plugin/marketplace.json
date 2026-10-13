@@ -1,0 +1,7 @@
+{
+  "name": "crabbus-local",
+  "owner": { "name": "joaquins" },
+  "plugins": [
+    { "name": "crabbus", "source": "./", "description": "Subagent observability, SendMessage tracking and animated pixel crabs for the orchestrator." }
+  ]
+}

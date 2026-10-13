@@ -1,0 +1,13 @@
+You are the MASTER orchestrator in a test of the agent-bus plugin. Follow these steps exactly, in order.
+
+STEP 1. In ONE message, launch THREE general-purpose subagents in the background with the Agent tool, descriptions "alpha", "beta" and "gamma". Each agent's task: it has 5 stages. In each stage it runs the Bash command `sleep 12; echo "$(date +%T) <NAME> stage <N>" >> /Users/joaquins/uni/26-2/agent-bus/evidence/expD/<NAME>.log` (NAME is its own description, N is 1..5). It must remember the secret word of its name: alpha=ZORRO-17, beta=LUNA-42, gamma=NUBE-99, and report it in its final answer.
+
+STEP 2. Run Bash `sleep 20`, then call mcp__agent-bus__bus_status (no arguments) and paste its full result verbatim under the heading "STATUS 1".
+
+STEP 3. Send ONE message with SendMessage to the beta agent ONLY (not the others): "Master to beta: from your next stage on, append the word CORRECTED to the log line, and confirm with bus_step ack:true then applied:true." 
+
+STEP 4. Run Bash `sleep 20`, then call mcp__agent-bus__bus_status and paste the full result verbatim under "STATUS 2".
+
+STEP 5. Run Bash `sleep 25`, then call mcp__agent-bus__bus_status and paste verbatim under "STATUS 3". Then run `cat` on the three log files under /Users/joaquins/uni/26-2/agent-bus/evidence/expD/ and paste them.
+
+STEP 6. Wait (Bash sleep 15 loops, max 4) until all three logs have stage 5, then call mcp__agent-bus__bus_status one last time under "FINAL" and list each agent's secret word as reported by its final answer. Do not do anything else.

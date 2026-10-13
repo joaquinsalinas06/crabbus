@@ -1,0 +1,18 @@
+{
+  "type": "bundle",
+  "items": [
+    {
+      "type": "piece", "id": "capybara-hat", "name": "capybara with a yuzu", "slot": "head", "anchor": "head",
+      "layers": [{
+        "pos": [0, 1],
+        "drawings": {
+          "a": ["....oo.....kk.....", "....bbbbbbbbbb....", "...bbbbbbbbbbebb..", "...bbbbbbbbbbbbbn.", "...dddddddddddddd."],
+          "b": ["....oo......kk....", "....bbbbbbbbbb....", "...bbbbbbbbbbebb..", "...bbbbbbbbbbbbbn.", "...dddddddddddddd."]
+        },
+        "palette": { "b": "#a0673a", "d": "#7a4a26", "k": "#6b4226", "e": "#1f1e1d", "n": "#3b2416", "o": "#f08a24" },
+        "anim": { "*": [{ "steps": [{ "d": "a" }, { "d": "a" }, { "d": "b" }, { "d": "a" }], "every": 2 }], "sleep": [] }
+      }]
+    },
+    { "type": "costume", "id": "capybara", "name": "capybara", "color": "#a0673a", "pieces": ["capybara-hat"] }
+  ]
+}

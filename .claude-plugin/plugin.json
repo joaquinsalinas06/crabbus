@@ -1,0 +1,41 @@
+{
+  "name": "crabbus",
+  "version": "0.5.0",
+  "description": "Star-topology observability for subagents: the master reads what each one is doing (observed, declared, verified), tracks SendMessage delivery, and animated pixel crabs show it live in the terminal.",
+  "author": {
+    "name": "joaquins"
+  },
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "fps": {
+      "type": "number",
+      "title": "Animation frames per second",
+      "description": "1 to 10 frames per second for the crabs (default 6)",
+      "default": 6
+    },
+    "reduceMotion": {
+      "type": "boolean",
+      "title": "Reduce motion",
+      "description": "Draw one still frame per state instead of animating",
+      "default": false
+    },
+    "openOnStart": {
+      "type": "boolean",
+      "title": "Open the pane on session start",
+      "description": "Show the CrabBus pane (master crab and subagents) as soon as Claude Code starts",
+      "default": true
+    },
+    "band": {
+      "type": "string",
+      "title": "Band above the prompt",
+      "description": "auto: one discreet line only while the side pane is not shown; stage: the full animated stage there too; off: never",
+      "default": "auto",
+      "options": [
+        "auto",
+        "stage",
+        "off"
+      ]
+    }
+  }
+}

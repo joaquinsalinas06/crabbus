@@ -1,0 +1,173 @@
+
+=== bus_status #1 ===
+agent-bus: 3 agent(s), 3 running, 0 finished. Layers: OBSERVED = hooks; DECLARED = the agent's own bus_step reports; VERIFIED = declared stages with attached evidence.
+
+■ alpha [ac1544ffc26c70aae] (general-purpose, claude-sonnet-5-5) — running, up 28s
+  OBSERVED  last tool: Bash sleep 12; echo "$(date +%T) alpha stage 2" >> /Users/joaquins/uni/26-2/agent-bus/evidence… (2s ago); 2 tool call(s); last activity 2s ago; shown as "walk"
+  DECLARED  1/5 stages declared done; now: stage 2 (2s ago)
+      ✓ 1. stage 1  [evidence: alpha.log line written]
+      ▶ 2. stage 2
+      ○ 3. stage 3
+      ○ 4. stage 4
+      ○ 5. stage 5
+  VERIFIED  1 of 1 declared-done stage(s) carry evidence; not a percentage of the work
+
+■ beta [a797a7ed424996cf5] (general-purpose, claude-sonnet-5-5) — running, up 26s
+  OBSERVED  last tool: Bash sleep 12; echo "$(date +%T) beta stage 2" >> /Users/joaquins/uni/26-2/agent-bus/evidence/… (1s ago); 2 tool call(s); last activity 1s ago; shown as "walk"
+  DECLARED  1/5 stages declared done; now: stage 2 (2s ago)
+      ✓ 1. stage 1  [evidence: beta.log line appended]
+      ▶ 2. stage 2
+      ○ 3. stage 3
+      ○ 4. stage 4
+      ○ 5. stage 5
+  VERIFIED  1 of 1 declared-done stage(s) carry evidence; not a percentage of the work
+
+■ gamma [ab970b0c84092a256] (general-purpose, claude-sonnet-5-5) — running, up 26s
+  OBSERVED  last tool: Bash sleep 12; echo "$(date +%T) gamma stage 2" >> /Users/joaquins/uni/26-2/agent-bus/evidence… (1s ago); 2 tool call(s); last activity 1s ago; shown as "walk"
+  DECLARED  1/5 stages declared done; now: stage 2 (1s ago)
+      ✓ 1. stage 1  [evidence: gamma.log line appended]
+      ▶ 2. stage 2
+      ○ 3. stage 3
+      ○ 4. stage 4
+      ○ 5. stage 5
+  VERIFIED  1 of 1 declared-done stage(s) carry evidence; not a percentage of the work
+>> SendMessage {"to":"a797a7ed424996cf5","summary":"Corrección de log para beta","message":"Master to beta: from your next stage on, append the word CORRECTED to the log line, and confirm with bus_step ack:true then
+
+=== bus_status #2 ===
+agent-bus: 3 agent(s), 3 running, 0 finished. Layers: OBSERVED = hooks; DECLARED = the agent's own bus_step reports; VERIFIED = declared stages with attached evidence.
+
+■ alpha [ac1544ffc26c70aae] (general-purpose, claude-sonnet-5-5) — running, up 59s
+  OBSERVED  last tool: Bash sleep 12; echo "$(date +%T) alpha stage 3" >> /Users/joaquins/uni/26-2/agent-bus/evidence… (14s ago); 3 tool call(s); last activity 14s ago; shown as "walk"
+  DECLARED  2/5 stages declared done; now: stage 3 (15s ago)
+      ✓ 1. stage 1  [evidence: alpha.log line written]
+      ✓ 2. stage 2
+      ▶ 3. stage 3
+      ○ 4. stage 4
+      ○ 5. stage 5
+  VERIFIED  1 of 2 declared-done stage(s) carry evidence; not a percentage of the work
+
+■ beta [a797a7ed424996cf5] (general-purpose, claude-sonnet-5-5) — running, up 58s
+  OBSERVED  last tool: Bash sleep 12; echo "$(date +%T) beta stage 3 CORRECTED" >> /Users/joaquins/uni/26-2/agent-bus… (12s ago); 3 tool call(s); last activity 12s ago; shown as "walk"
+  DECLARED  2/5 stages declared done; now: stage 3 with CORRECTED (13s ago)
+      ✓ 1. stage 1  [evidence: beta.log line appended]
+      ✓ 2. stage 2
+      ▶ 3. stage 3
+      ○ 4. stage 4
+      ○ 5. stage 5
+  VERIFIED  1 of 2 declared-done stage(s) carry evidence; not a percentage of the work
+  MESSAGES  m1 "Master to beta: from your next stage on, append t…": accepted, received by agent (13s ago)
+
+■ gamma [ab970b0c84092a256] (general-purpose, claude-sonnet-5-5) — running, up 58s
+  OBSERVED  last tool: Bash sleep 12; echo "$(date +%T) gamma stage 3" >> /Users/joaquins/uni/26-2/agent-bus/evidence… (12s ago); 3 tool call(s); last activity 12s ago; shown as "walk"
+  DECLARED  2/5 stages declared done; now: stage 3 (12s ago)
+      ✓ 1. stage 1  [evidence: gamma.log line appended]
+      ✓ 2. stage 2
+      ▶ 3. stage 3
+      ○ 4. stage 4
+      ○ 5. stage 5
+  VERIFIED  1 of 2 declared-done stage(s) carry evidence; not a percentage of the work
+
+=== bus_status #3 ===
+agent-bus: 3 agent(s), 3 running, 0 finished. Layers: OBSERVED = hooks; DECLARED = the agent's own bus_step reports; VERIFIED = declared stages with attached evidence.
+
+■ alpha [ac1544ffc26c70aae] (general-purpose, claude-sonnet-5-5) — running, up 1m05s
+  OBSERVED  last tool: Bash sleep 12; echo "$(date +%T) alpha stage 3" >> /Users/joaquins/uni/26-2/agent-bus/evidence… (20s ago); 3 tool call(s); last activity 0s ago; shown as "walk"
+  DECLARED  3/5 stages declared done; now: stage 4 (0s ago)
+      ✓ 1. stage 1  [evidence: alpha.log line written]
+      ✓ 2. stage 2
+      ✓ 3. stage 3
+      ▶ 4. stage 4
+      ○ 5. stage 5
+  VERIFIED  1 of 3 declared-done stage(s) carry evidence; not a percentage of the work
+
+■ beta [a797a7ed424996cf5] (general-purpose, claude-sonnet-5-5) — running, up 1m04s
+  OBSERVED  last tool: Bash sleep 12; echo "$(date +%T) beta stage 3 CORRECTED" >> /Users/joaquins/uni/26-2/agent-bus… (18s ago); 3 tool call(s); last activity 18s ago; shown as "walk"
+  DECLARED  2/5 stages declared done; now: stage 3 with CORRECTED (19s ago)
+      ✓ 1. stage 1  [evidence: beta.log line appended]
+      ✓ 2. stage 2
+      ▶ 3. stage 3
+      ○ 4. stage 4
+      ○ 5. stage 5
+  VERIFIED  1 of 2 declared-done stage(s) carry evidence; not a percentage of the work
+  MESSAGES  m1 "Master to beta: from your next stage on, append t…": accepted, received by agent (19s ago)
+
+■ gamma [ab970b0c84092a256] (general-purpose, claude-sonnet-5-5) — running, up 1m03s
+  OBSERVED  last tool: Bash sleep 12; echo "$(date +%T) gamma stage 3" >> /Users/joaquins/uni/26-2/agent-bus/evidence… (18s ago); 3 tool call(s); last activity 18s ago; shown as "walk"
+  DECLARED  2/5 stages declared done; now: stage 3 (18s ago)
+      ✓ 1. stage 1  [evidence: gamma.log line appended]
+      ✓ 2. stage 2
+      ▶ 3. stage 3
+      ○ 4. stage 4
+      ○ 5. stage 5
+  VERIFIED  1 of 2 declared-done stage(s) carry evidence; not a percentage of the work
+
+=== bus_status #4 ===
+agent-bus: 3 agent(s), 3 running, 0 finished. Layers: OBSERVED = hooks; DECLARED = the agent's own bus_step reports; VERIFIED = declared stages with attached evidence.
+
+■ alpha [ac1544ffc26c70aae] (general-purpose, claude-sonnet-5-5) — running, up 1m38s
+  OBSERVED  last tool: Bash sleep 12; echo "$(date +%T) alpha stage 5" >> /Users/joaquins/uni/26-2/agent-bus/evidence… (10s ago); 5 tool call(s); last activity 10s ago; shown as "walk"
+  DECLARED  4/5 stages declared done; now: stage 5 (11s ago)
+      ✓ 1. stage 1  [evidence: alpha.log line written]
+      ✓ 2. stage 2
+      ✓ 3. stage 3
+      ✓ 4. stage 4
+      ▶ 5. stage 5
+  VERIFIED  1 of 4 declared-done stage(s) carry evidence; not a percentage of the work
+
+■ beta [a797a7ed424996cf5] (general-purpose, claude-sonnet-5-5) — running, up 1m37s
+  OBSERVED  last tool: Bash sleep 12; echo "$(date +%T) beta stage 5 CORRECTED" >> /Users/joaquins/uni/26-2/agent-bus… (9s ago); 5 tool call(s); last activity 9s ago; shown as "walk"
+  DECLARED  4/5 stages declared done; now: stage 5; note: Stage 3 line carries CORRECTED; stages 4-5 will too (9s ago)
+      ✓ 1. stage 1  [evidence: beta.log line appended]
+      ✓ 2. stage 2
+      ✓ 3. stage 3
+      ✓ 4. stage 4
+      ▶ 5. stage 5
+  VERIFIED  1 of 4 declared-done stage(s) carry evidence; not a percentage of the work
+  MESSAGES  m1 "Master to beta: from your next stage on, append t…": accepted, received by agent (51s ago), applied/answered
+
+■ gamma [ab970b0c84092a256] (general-purpose, claude-sonnet-5-5) — running, up 1m36s
+  OBSERVED  last tool: Bash sleep 12; echo "$(date +%T) gamma stage 5" >> /Users/joaquins/uni/26-2/agent-bus/evidence… (8s ago); 5 tool call(s); last activity 8s ago; shown as "walk"
+  DECLARED  4/5 stages declared done; now: stage 5 (9s ago)
+      ✓ 1. stage 1  [evidence: gamma.log line appended]
+      ✓ 2. stage 2
+      ✓ 3. stage 3
+      ✓ 4. stage 4
+      ▶ 5. stage 5
+  VERIFIED  1 of 4 declared-done stage(s) carry evidence; not a percentage of the work
+
+=== bus_status #5 ===
+agent-bus: 3 agent(s), 0 running, 3 finished. Layers: OBSERVED = hooks; DECLARED = the agent's own bus_step reports; VERIFIED = declared stages with attached evidence.
+
+■ alpha [ac1544ffc26c70aae] (general-purpose, claude-sonnet-5-5) — done
+  OBSERVED  last tool: Bash sleep 12; echo "$(date +%T) alpha stage 5" >> /Users/joaquins/uni/26-2/agent-bus/evidence… (27s ago); 5 tool call(s); last activity 6s ago; shown as "done"
+            tokens (completed turns): in 211934, out 1338
+  DECLARED  5/5 stages declared done; now: finished (7s ago)
+      ✓ 1. stage 1  [evidence: alpha.log line written]
+      ✓ 2. stage 2
+      ✓ 3. stage 3
+      ✓ 4. stage 4
+      ✓ 5. stage 5  [evidence: alpha.log has 5 stage lines, 19:29:37-19:31:02]
+  VERIFIED  2 of 5 declared-done stage(s) carry evidence; not a percentage of the work
+
+■ beta [a797a7ed424996cf5] (general-purpose, claude-sonnet-5-5) — done
+  OBSERVED  last tool: Bash sleep 12; echo "$(date +%T) beta stage 5 CORRECTED" >> /Users/joaquins/uni/26-2/agent-bus… (25s ago); 5 tool call(s); last activity 3s ago; shown as "done"
+            tokens (completed turns): in 213167, out 1385
+  DECLARED  5/5 stages declared done; now: stage 5; note: Stage 3 line carries CORRECTED; stages 4-5 will too (5s ago)
+      ✓ 1. stage 1  [evidence: beta.log line appended]
+      ✓ 2. stage 2
+      ✓ 3. stage 3
+      ✓ 4. stage 4
+      ✓ 5. stage 5  [evidence: beta.log has 5 lines; stages 3-5 end with CORRECTED]
+  VERIFIED  2 of 5 declared-done stage(s) carry evidence; not a percentage of the work
+  MESSAGES  m1 "Master to beta: from your next stage on, append t…": accepted, received by agent (1m08s ago), applied/answered
+
+■ gamma [ab970b0c84092a256] (general-purpose, claude-sonnet-5-5) — done
+  OBSERVED  last tool: Bash sleep 12; echo "$(date +%T) gamma stage 5" >> /Users/joaquins/uni/26-2/agent-bus/evidence… (25s ago); 5 tool call(s); last activity 2s ago; shown as "done"
+            tokens (completed turns): in 211780, out 1273
+  DECLARED  5/5 stages declared done; now: finished (4s ago)
+      ✓ 1. stage 1  [evidence: gamma.log line appended]
+      ✓ 2. stage 2
+      ✓ 3. stage 3
+      ✓ 4. stage 4
+      ✓ 5. stage 5  [evidence: gamma.log has 5 lines, stages 1-5]
+  VERIFIED  2 of 5 declared-done stage(s) carry evidence; not a percentage of the work

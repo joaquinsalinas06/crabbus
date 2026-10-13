@@ -1,0 +1,40 @@
+[48;5;237m  [38;5;231mBash [38;5;153msleep 20[38;5;231m and report [39m
+  [38;5;231mthe stage done. Say [39m
+  [38;5;231mlaunched and stop.[39m
+
+[38;5;114m[49m⏺[39m [1m3[0m background agents launched
+  [38;5;246m(↓ to manage)[39m
+   [38;5;246m├[39m [1mbackend[0m
+   [38;5;246m├[39m [1mfrontend[0m
+   [38;5;246m└[39m [1mdocs[0m
+
+[38;5;231m⏺[39m Lancé en segundo plano los
+  tres subagentes: backend,
+  frontend y docs. Cada uno va
+  a reportar a agent-bus un
+  plan de 4 etapas y luego
+  ejecutar [38;5;153msleep 20[39m 4 veces,
+  marcando cada etapa al
+  terminarla.
+[38;5;246m  ⎿  Stop says: ○○○ Semgrep [39m
+     [38;5;246mGuardian: 5 scans this [39m
+     [38;5;246msession across 5 files, 0
+[39m     [38;5;246mfindings.[39m
+
+[38;5;246m✻[39m [38;5;246mWaiting for [1m3[0m[38;5;246m background [39m
+  [38;5;246magents to finish[39m
+
+[38;5;246m[48;5;237m❯[39m [38;5;231m/agents-info[39m
+[38;5;246m[49m  ⎿ [39msavvy-progress: Agents
+[38;5;246m [39m   panel closed.
+[38;5;174m🦀 [1m[38;5;74mbackend[0m[38;5;145m ● 3/4[39m · [1m[38;5;72mdocs[0m[38;5;145m …[39m [38;5;246m[-][39m
+
+[38;5;244m──────────────────────────────
+[39m❯ 
+[38;5;244m──────────────────────────────
+[39m  [38;5;220m⏵⏵ auto mode on[38;5;246m (shift+tab[39m
+
+[1m  ⏺ main[0m
+[38;5;246m  ◯ general-purpose[39m [38;5;246m1m 32s · ↓
+  ◯ general-purpose[39m [38;5;246m1m 32s · ↓
+  ◯ general-purpose[39m [38;5;246m1m 32s · ↓

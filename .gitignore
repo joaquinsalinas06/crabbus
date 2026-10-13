@@ -1,0 +1,10 @@
+.DS_Store
+node_modules/
+.claude-plugin/types/
+graphify-out/
+
+# dev-only tools for the README assets and recordings (kept private)
+tools/brand.ts
+tools/ansi2svg.ts
+tools/ansi2png.ts
+tools/record.sh

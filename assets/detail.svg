@@ -1,0 +1,393 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="621" height="868" viewBox="0 0 621 868">
+<style>text{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;font-size:15px;white-space:pre}</style>
+<rect width="621" height="868" rx="10" fill="#16181d"/>
+<rect width="621" height="34" rx="10" fill="#22252b"/><rect y="24" width="621" height="10" fill="#22252b"/>
+<circle cx="20" cy="17" r="6" fill="#ff5f57"/><circle cx="40" cy="17" r="6" fill="#febc2e"/><circle cx="60" cy="17" r="6" fill="#28c840"/>
+<text x="310.5" y="22" fill="#8b949e" text-anchor="middle">/bus — agent detail</text>
+<rect x="18" y="52" width="576" height="19" fill="#262626"/>
+<text x="585" y="66" fill="#949494" textLength="9" lengthAdjust="spacingAndGlyphs">✕</text>
+<rect x="18" y="71" width="189" height="19" fill="#262626"/>
+<rect x="207" y="71" width="9" height="19" fill="#eeeeee"/>
+<rect x="216" y="71" width="54" height="19" fill="#262626"/>
+<text x="18" y="85" fill="#afd7ff" textLength="9" lengthAdjust="spacingAndGlyphs">b</text>
+<text x="27" y="85" fill="#d0d0d0" textLength="162" lengthAdjust="spacingAndGlyphs">: ←               </text>
+<rect x="189" y="80.5" width="9" height="9.5" fill="#262626"/>
+<rect x="198" y="71" width="9" height="9.5" fill="#eeeeee"/>
+<rect x="207" y="71" width="9" height="9.5" fill="#262626"/>
+<rect x="216" y="71" width="9" height="19" fill="#9e9e9e"/>
+<text x="234" y="85" fill="#5faf87" font-weight="700" textLength="36" lengthAdjust="spacingAndGlyphs">auth</text>
+<rect x="18" y="90" width="522" height="19" fill="#262626"/>
+<rect x="99" y="99.5" width="9" height="9.5" fill="#008787"/>
+<rect x="108" y="99.5" width="9" height="9.5" fill="#008787"/>
+<rect x="117" y="90" width="9" height="19" fill="#008787"/>
+<rect x="126" y="90" width="9" height="19" fill="#008787"/>
+<rect x="135" y="90" width="9" height="19" fill="#eeeeee"/>
+<rect x="144" y="90" width="9" height="19" fill="#eeeeee"/>
+<rect x="153" y="90" width="9" height="19" fill="#008787"/>
+<rect x="162" y="90" width="9" height="19" fill="#008787"/>
+<rect x="171" y="99.5" width="9" height="9.5" fill="#008787"/>
+<rect x="180" y="99.5" width="9" height="9.5" fill="#008787"/>
+<rect x="189" y="90" width="9" height="9.5" fill="#eeeeee"/>
+<rect x="216" y="90" width="9" height="19" fill="#9e9e9e"/>
+<text x="234" y="104" fill="#afafaf" textLength="306" lengthAdjust="spacingAndGlyphs">general-purpose · claude-haiku-5-5</text>
+<rect x="18" y="109" width="216" height="19" fill="#262626"/>
+<rect x="234" y="109" width="99" height="19" fill="#000000"/>
+<rect x="90" y="109" width="9" height="19" fill="#008787"/>
+<rect x="99" y="109" width="9" height="19" fill="#008787"/>
+<rect x="108" y="109" width="9" height="19" fill="#008787"/>
+<rect x="117" y="109" width="9" height="19" fill="#008787"/>
+<rect x="126" y="109" width="9" height="19" fill="#008787"/>
+<rect x="135" y="109" width="9" height="19" fill="#eeeeee"/>
+<rect x="144" y="109" width="9" height="19" fill="#eeeeee"/>
+<rect x="153" y="109" width="9" height="19" fill="#008787"/>
+<rect x="162" y="109" width="9" height="19" fill="#008787"/>
+<rect x="171" y="109" width="9" height="19" fill="#008787"/>
+<rect x="180" y="109" width="9" height="19" fill="#008787"/>
+<rect x="189" y="109" width="9" height="19" fill="#008787"/>
+<rect x="216" y="109" width="9" height="19" fill="#9e9e9e"/>
+<text x="234" y="123" fill="#afd7af" textLength="99" lengthAdjust="spacingAndGlyphs"> ● working </text>
+<rect x="18" y="128" width="81" height="19" fill="#262626"/>
+<rect x="99" y="128" width="90" height="19" fill="#d78787"/>
+<rect x="189" y="128" width="297" height="19" fill="#262626"/>
+<rect x="90" y="128" width="9" height="9.5" fill="#262626"/>
+<rect x="99" y="128" width="9" height="9.5" fill="#262626"/>
+<rect x="108" y="128" width="9" height="9.5" fill="#262626"/>
+<rect x="117" y="128" width="9" height="9.5" fill="#262626"/>
+<rect x="126" y="128" width="9" height="9.5" fill="#262626"/>
+<rect x="135" y="128" width="9" height="9.5" fill="#262626"/>
+<rect x="144" y="128" width="9" height="9.5" fill="#262626"/>
+<rect x="153" y="128" width="9" height="9.5" fill="#262626"/>
+<rect x="162" y="128" width="9" height="9.5" fill="#262626"/>
+<rect x="171" y="128" width="9" height="9.5" fill="#262626"/>
+<rect x="180" y="128" width="9" height="9.5" fill="#262626"/>
+<rect x="189" y="128" width="9" height="9.5" fill="#262626"/>
+<rect x="216" y="128" width="9" height="19" fill="#9e9e9e"/>
+<text x="234" y="142" fill="#d7d7d7" textLength="252" lengthAdjust="spacingAndGlyphs">running Bash · 3 of 4 stages</text>
+<rect x="18" y="147" width="72" height="19" fill="#262626"/>
+<rect x="90" y="147" width="9" height="19" fill="#d7875f"/>
+<rect x="99" y="147" width="252" height="19" fill="#262626"/>
+<rect x="72" y="156.5" width="9" height="9.5" fill="#d78787"/>
+<rect x="81" y="156.5" width="9" height="9.5" fill="#d78787"/>
+<rect x="90" y="147" width="9" height="9.5" fill="#d78787"/>
+<rect x="99" y="147" width="9" height="19" fill="#d7875f"/>
+<rect x="108" y="147" width="9" height="9.5" fill="#d7875f"/>
+<rect x="117" y="147" width="9" height="19" fill="#d7875f"/>
+<rect x="126" y="147" width="9" height="19" fill="#d7875f"/>
+<rect x="135" y="147" width="9" height="19" fill="#d7875f"/>
+<rect x="144" y="147" width="9" height="19" fill="#d7875f"/>
+<rect x="153" y="147" width="9" height="19" fill="#d7875f"/>
+<rect x="162" y="147" width="9" height="19" fill="#d7875f"/>
+<rect x="171" y="147" width="9" height="9.5" fill="#d7875f"/>
+<rect x="180" y="147" width="9" height="19" fill="#d7875f"/>
+<rect x="189" y="147" width="9" height="19" fill="#875f5f"/>
+<rect x="198" y="156.5" width="9" height="9.5" fill="#d78787"/>
+<rect x="207" y="156.5" width="9" height="9.5" fill="#d78787"/>
+<text x="234" y="161" fill="#afd7ff" textLength="9" lengthAdjust="spacingAndGlyphs">p</text>
+<text x="243" y="161" fill="#d0d0d0" textLength="36" lengthAdjust="spacingAndGlyphs">: ‹ </text>
+<text x="279" y="161" fill="#afafaf" textLength="27" lengthAdjust="spacingAndGlyphs">2/3</text>
+<text x="315" y="161" fill="#afd7ff" textLength="9" lengthAdjust="spacingAndGlyphs">n</text>
+<text x="324" y="161" fill="#d0d0d0" textLength="27" lengthAdjust="spacingAndGlyphs">: ›</text>
+<rect x="18" y="166" width="90" height="19" fill="#262626"/>
+<rect x="108" y="166" width="9" height="19" fill="#d7875f"/>
+<rect x="117" y="166" width="54" height="19" fill="#262626"/>
+<rect x="171" y="166" width="9" height="19" fill="#d7875f"/>
+<rect x="180" y="166" width="36" height="19" fill="#262626"/>
+<rect x="72" y="166" width="9" height="9.5" fill="#d7875f"/>
+<rect x="81" y="166" width="9" height="9.5" fill="#d7875f"/>
+<rect x="90" y="166" width="9" height="19" fill="#d7875f"/>
+<rect x="99" y="166" width="9" height="19" fill="#d7875f"/>
+<rect x="108" y="166" width="9" height="9.5" fill="#262626"/>
+<rect x="117" y="166" width="9" height="19" fill="#d7875f"/>
+<rect x="126" y="166" width="9" height="19" fill="#d7875f"/>
+<rect x="135" y="166" width="9" height="19" fill="#d7875f"/>
+<rect x="144" y="166" width="9" height="19" fill="#d7875f"/>
+<rect x="153" y="166" width="9" height="19" fill="#d7875f"/>
+<rect x="162" y="166" width="9" height="19" fill="#d7875f"/>
+<rect x="171" y="166" width="9" height="9.5" fill="#262626"/>
+<rect x="180" y="166" width="9" height="19" fill="#d7875f"/>
+<rect x="189" y="166" width="9" height="19" fill="#875f5f"/>
+<rect x="198" y="166" width="9" height="9.5" fill="#d7875f"/>
+<rect x="207" y="166" width="9" height="9.5" fill="#d7875f"/>
+<rect x="18" y="185" width="171" height="19" fill="#262626"/>
+<rect x="99" y="185" width="9" height="19" fill="#875f5f"/>
+<rect x="108" y="185" width="9" height="9.5" fill="#875f5f"/>
+<rect x="117" y="185" width="9" height="9.5" fill="#875f5f"/>
+<rect x="126" y="185" width="9" height="9.5" fill="#875f5f"/>
+<rect x="135" y="185" width="9" height="9.5" fill="#875f5f"/>
+<rect x="144" y="185" width="9" height="9.5" fill="#875f5f"/>
+<rect x="153" y="185" width="9" height="9.5" fill="#875f5f"/>
+<rect x="162" y="185" width="9" height="19" fill="#875f5f"/>
+<rect x="171" y="185" width="9" height="9.5" fill="#875f5f"/>
+<rect x="180" y="185" width="9" height="9.5" fill="#875f5f"/>
+<rect x="18" y="223" width="585" height="19" fill="#262626"/>
+<text x="18" y="237" fill="#5f5f5f" textLength="9" lengthAdjust="spacingAndGlyphs">╭</text>
+<rect x="27" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="36" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="45" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="54" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="63" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="72" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="81" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="90" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="99" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="108" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="117" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="126" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="135" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="144" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="153" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="162" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="171" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="180" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="189" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="198" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="207" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="216" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="225" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="234" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="243" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="252" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="261" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="270" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="279" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="288" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="297" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="306" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="315" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="324" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="333" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="342" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="351" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="360" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="369" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="378" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="387" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="396" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="405" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="414" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="423" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="432" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="441" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="450" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="459" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="468" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="477" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="486" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="495" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="504" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="513" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="522" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="531" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="540" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="549" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="558" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="567" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="576" y="232" width="9" height="1" fill="#5f5f5f"/>
+<rect x="585" y="232" width="9" height="1" fill="#5f5f5f"/>
+<text x="594" y="237" fill="#5f5f5f" textLength="9" lengthAdjust="spacingAndGlyphs">╮</text>
+<rect x="18" y="242" width="18" height="19" fill="#262626"/>
+<rect x="36" y="242" width="45" height="19" fill="#5f5f5f"/>
+<rect x="81" y="242" width="522" height="19" fill="#262626"/>
+<rect x="22" y="242" width="1" height="19" fill="#5f5f5f"/>
+<text x="36" y="256" fill="#d7d7d7" textLength="45" lengthAdjust="spacingAndGlyphs"> all </text>
+<text x="90" y="256" fill="#afafaf" textLength="63" lengthAdjust="spacingAndGlyphs"> tools </text>
+<text x="162" y="256" fill="#afafaf" textLength="99" lengthAdjust="spacingAndGlyphs"> reasoning </text>
+<text x="531" y="256" fill="#afd7af" textLength="54" lengthAdjust="spacingAndGlyphs">● live</text>
+<rect x="598" y="242" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="261" width="585" height="19" fill="#262626"/>
+<rect x="22" y="261" width="1" height="19" fill="#5f5f5f"/>
+<text x="36" y="275" fill="#878787" textLength="9" lengthAdjust="spacingAndGlyphs">›</text>
+<text x="54" y="275" fill="#ffaf87" font-weight="700" textLength="135" lengthAdjust="spacingAndGlyphs">master → auth  </text>
+<text x="189" y="275" fill="#d7d7d7" textLength="387" lengthAdjust="spacingAndGlyphs">You are a background worker in the project </text>
+<rect x="598" y="261" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="280" width="585" height="19" fill="#262626"/>
+<rect x="22" y="280" width="1" height="19" fill="#5f5f5f"/>
+<text x="54" y="294" fill="#d7d7d7" textLength="522" lengthAdjust="spacingAndGlyphs">at /private/tmp/crabbus-demo/shop-api. Follow these steps </text>
+<rect x="598" y="280" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="299" width="585" height="19" fill="#262626"/>
+<rect x="22" y="299" width="1" height="19" fill="#5f5f5f"/>
+<text x="54" y="313" fill="#d7d7d7" textLength="495" lengthAdjust="spacingAndGlyphs">exactly, in order. 1. Call mcp__crabbus__bus_step with </text>
+<rect x="598" y="299" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="318" width="585" height="19" fill="#262626"/>
+<rect x="22" y="318" width="1" height="19" fill="#5f5f5f"/>
+<text x="54" y="332" fill="#d7d7d7" textLength="162" lengthAdjust="spacingAndGlyphs">`plan` set to a 4…</text>
+<rect x="598" y="318" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="337" width="585" height="19" fill="#262626"/>
+<rect x="22" y="337" width="1" height="19" fill="#5f5f5f"/>
+<rect x="598" y="337" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="356" width="585" height="19" fill="#262626"/>
+<rect x="22" y="356" width="1" height="19" fill="#5f5f5f"/>
+<text x="36" y="370" fill="#d7d7ff" textLength="9" lengthAdjust="spacingAndGlyphs">◇</text>
+<text x="54" y="370" fill="#d7d7ff" font-weight="700" textLength="90" lengthAdjust="spacingAndGlyphs">declared  </text>
+<text x="144" y="370" fill="#afafaf" textLength="198" lengthAdjust="spacingAndGlyphs">plan 4 stages · done 0</text>
+<rect x="598" y="356" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="375" width="585" height="19" fill="#262626"/>
+<rect x="22" y="375" width="1" height="19" fill="#5f5f5f"/>
+<rect x="598" y="375" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="394" width="585" height="19" fill="#262626"/>
+<rect x="22" y="394" width="1" height="19" fill="#5f5f5f"/>
+<text x="36" y="408" fill="#ff87af" textLength="9" lengthAdjust="spacingAndGlyphs">⏺</text>
+<text x="54" y="408" fill="#d7d7d7" font-weight="700" textLength="36" lengthAdjust="spacingAndGlyphs">Read</text>
+<text x="90" y="408" fill="#afafaf" textLength="441" lengthAdjust="spacingAndGlyphs">(/private/tmp/crabbus-demo/shop-api/package.json)</text>
+<rect x="598" y="394" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="413" width="585" height="19" fill="#262626"/>
+<rect x="22" y="413" width="1" height="19" fill="#5f5f5f"/>
+<text x="54" y="427" fill="#878787" textLength="9" lengthAdjust="spacingAndGlyphs">⎿</text>
+<text x="72" y="427" fill="#ff87af" textLength="486" lengthAdjust="spacingAndGlyphs">File does not exist. Note: your current working direc…</text>
+<rect x="598" y="413" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="432" width="585" height="19" fill="#262626"/>
+<rect x="22" y="432" width="1" height="19" fill="#5f5f5f"/>
+<rect x="598" y="432" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="451" width="585" height="19" fill="#262626"/>
+<rect x="22" y="451" width="1" height="19" fill="#5f5f5f"/>
+<text x="36" y="465" fill="#afd7af" textLength="9" lengthAdjust="spacingAndGlyphs">⏺</text>
+<text x="54" y="465" fill="#d7d7d7" font-weight="700" textLength="36" lengthAdjust="spacingAndGlyphs">Bash</text>
+<text x="90" y="465" fill="#afafaf" textLength="477" lengthAdjust="spacingAndGlyphs">(find /private/tmp/crabbus-demo/shop-api -maxdepth 2 </text>
+<rect x="598" y="451" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="470" width="585" height="19" fill="#262626"/>
+<rect x="22" y="470" width="1" height="19" fill="#5f5f5f"/>
+<text x="54" y="484" fill="#afafaf" textLength="171" lengthAdjust="spacingAndGlyphs">-type f | head -20)</text>
+<rect x="598" y="470" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="489" width="585" height="19" fill="#262626"/>
+<rect x="22" y="489" width="1" height="19" fill="#5f5f5f"/>
+<text x="54" y="503" fill="#878787" textLength="9" lengthAdjust="spacingAndGlyphs">⎿</text>
+<text x="72" y="503" fill="#afafaf" textLength="441" lengthAdjust="spacingAndGlyphs">/private/tmp/crabbus-demo/shop-api/docs/README.md</text>
+<rect x="598" y="489" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="508" width="585" height="19" fill="#262626"/>
+<rect x="22" y="508" width="1" height="19" fill="#5f5f5f"/>
+<text x="72" y="522" fill="#afafaf" textLength="432" lengthAdjust="spacingAndGlyphs">/private/tmp/crabbus-demo/shop-api/src/router.ts</text>
+<rect x="598" y="508" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="527" width="585" height="19" fill="#262626"/>
+<rect x="22" y="527" width="1" height="19" fill="#5f5f5f"/>
+<text x="72" y="541" fill="#afafaf" textLength="414" lengthAdjust="spacingAndGlyphs">/private/tmp/crabbus-demo/shop-api/src/cart.ts</text>
+<rect x="598" y="527" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="546" width="585" height="19" fill="#262626"/>
+<rect x="22" y="546" width="1" height="19" fill="#5f5f5f"/>
+<text x="72" y="560" fill="#afafaf" textLength="414" lengthAdjust="spacingAndGlyphs">/private/tmp/crabbus-demo/shop-api/src/auth.ts</text>
+<rect x="598" y="546" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="565" width="585" height="19" fill="#262626"/>
+<rect x="22" y="565" width="1" height="19" fill="#5f5f5f"/>
+<rect x="598" y="565" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="584" width="585" height="19" fill="#262626"/>
+<rect x="22" y="584" width="1" height="19" fill="#5f5f5f"/>
+<text x="36" y="598" fill="#afd7af" textLength="9" lengthAdjust="spacingAndGlyphs">⏺</text>
+<text x="54" y="598" fill="#d7d7d7" font-weight="700" textLength="36" lengthAdjust="spacingAndGlyphs">Read</text>
+<text x="90" y="598" fill="#afafaf" textLength="450" lengthAdjust="spacingAndGlyphs">(/private/tmp/crabbus-demo/shop-api/src/router.ts)</text>
+<rect x="598" y="584" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="603" width="585" height="19" fill="#262626"/>
+<rect x="22" y="603" width="1" height="19" fill="#5f5f5f"/>
+<text x="54" y="617" fill="#878787" textLength="9" lengthAdjust="spacingAndGlyphs">⎿</text>
+<text x="72" y="617" fill="#afafaf" textLength="108" lengthAdjust="spacingAndGlyphs">Read 2 lines</text>
+<rect x="598" y="603" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="622" width="585" height="19" fill="#262626"/>
+<rect x="22" y="622" width="1" height="19" fill="#5f5f5f"/>
+<rect x="598" y="622" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="641" width="585" height="19" fill="#262626"/>
+<rect x="22" y="641" width="1" height="19" fill="#5f5f5f"/>
+<text x="36" y="655" fill="#d7d7ff" textLength="9" lengthAdjust="spacingAndGlyphs">◇</text>
+<text x="54" y="655" fill="#d7d7ff" font-weight="700" textLength="90" lengthAdjust="spacingAndGlyphs">declared  </text>
+<text x="144" y="655" fill="#afafaf" textLength="270" lengthAdjust="spacingAndGlyphs">done 1 · current: Sleeping 12s</text>
+<rect x="598" y="641" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="660" width="585" height="19" fill="#262626"/>
+<rect x="22" y="660" width="1" height="19" fill="#5f5f5f"/>
+<rect x="598" y="660" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="679" width="585" height="19" fill="#262626"/>
+<rect x="22" y="679" width="1" height="19" fill="#5f5f5f"/>
+<text x="36" y="693" fill="#afd7af" textLength="9" lengthAdjust="spacingAndGlyphs">⏺</text>
+<text x="54" y="693" fill="#d7d7d7" font-weight="700" textLength="36" lengthAdjust="spacingAndGlyphs">Bash</text>
+<text x="90" y="693" fill="#afafaf" textLength="90" lengthAdjust="spacingAndGlyphs">(sleep 12)</text>
+<rect x="598" y="679" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="698" width="585" height="19" fill="#262626"/>
+<rect x="22" y="698" width="1" height="19" fill="#5f5f5f"/>
+<text x="54" y="712" fill="#878787" textLength="9" lengthAdjust="spacingAndGlyphs">⎿</text>
+<text x="72" y="712" fill="#afafaf" textLength="279" lengthAdjust="spacingAndGlyphs">(Bash completed with no output)</text>
+<rect x="598" y="698" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="717" width="585" height="19" fill="#262626"/>
+<rect x="22" y="717" width="1" height="19" fill="#5f5f5f"/>
+<rect x="598" y="717" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="736" width="585" height="19" fill="#262626"/>
+<rect x="22" y="736" width="1" height="19" fill="#5f5f5f"/>
+<text x="36" y="750" fill="#d7d7ff" textLength="9" lengthAdjust="spacingAndGlyphs">◇</text>
+<text x="54" y="750" fill="#d7d7ff" font-weight="700" textLength="90" lengthAdjust="spacingAndGlyphs">declared  </text>
+<text x="144" y="750" fill="#afafaf" textLength="333" lengthAdjust="spacingAndGlyphs">done 2 · current: Reading second file</text>
+<rect x="598" y="736" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="755" width="585" height="19" fill="#262626"/>
+<rect x="22" y="755" width="1" height="19" fill="#5f5f5f"/>
+<rect x="598" y="755" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="774" width="585" height="19" fill="#262626"/>
+<rect x="22" y="774" width="1" height="19" fill="#5f5f5f"/>
+<text x="36" y="788" fill="#afd7af" textLength="9" lengthAdjust="spacingAndGlyphs">⏺</text>
+<text x="54" y="788" fill="#d7d7d7" font-weight="700" textLength="36" lengthAdjust="spacingAndGlyphs">Read</text>
+<text x="90" y="788" fill="#afafaf" textLength="432" lengthAdjust="spacingAndGlyphs">(/private/tmp/crabbus-demo/shop-api/src/cart.ts)</text>
+<rect x="598" y="774" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="793" width="585" height="19" fill="#262626"/>
+<rect x="22" y="793" width="1" height="19" fill="#5f5f5f"/>
+<text x="54" y="807" fill="#878787" textLength="9" lengthAdjust="spacingAndGlyphs">⎿</text>
+<text x="72" y="807" fill="#afafaf" textLength="108" lengthAdjust="spacingAndGlyphs">Read 2 lines</text>
+<rect x="598" y="793" width="1" height="19" fill="#5f5f5f"/>
+<rect x="18" y="840" width="9" height="1" fill="#808080"/>
+<rect x="27" y="840" width="9" height="1" fill="#808080"/>
+<rect x="36" y="840" width="9" height="1" fill="#808080"/>
+<rect x="45" y="840" width="9" height="1" fill="#808080"/>
+<rect x="54" y="840" width="9" height="1" fill="#808080"/>
+<rect x="63" y="840" width="9" height="1" fill="#808080"/>
+<rect x="72" y="840" width="9" height="1" fill="#808080"/>
+<rect x="81" y="840" width="9" height="1" fill="#808080"/>
+<rect x="90" y="840" width="9" height="1" fill="#808080"/>
+<rect x="99" y="840" width="9" height="1" fill="#808080"/>
+<rect x="108" y="840" width="9" height="1" fill="#808080"/>
+<rect x="117" y="840" width="9" height="1" fill="#808080"/>
+<rect x="126" y="840" width="9" height="1" fill="#808080"/>
+<rect x="135" y="840" width="9" height="1" fill="#808080"/>
+<rect x="144" y="840" width="9" height="1" fill="#808080"/>
+<rect x="153" y="840" width="9" height="1" fill="#808080"/>
+<rect x="162" y="840" width="9" height="1" fill="#808080"/>
+<rect x="171" y="840" width="9" height="1" fill="#808080"/>
+<rect x="180" y="840" width="9" height="1" fill="#808080"/>
+<rect x="189" y="840" width="9" height="1" fill="#808080"/>
+<rect x="198" y="840" width="9" height="1" fill="#808080"/>
+<rect x="207" y="840" width="9" height="1" fill="#808080"/>
+<rect x="216" y="840" width="9" height="1" fill="#808080"/>
+<rect x="225" y="840" width="9" height="1" fill="#808080"/>
+<rect x="234" y="840" width="9" height="1" fill="#808080"/>
+<rect x="243" y="840" width="9" height="1" fill="#808080"/>
+<rect x="252" y="840" width="9" height="1" fill="#808080"/>
+<rect x="261" y="840" width="9" height="1" fill="#808080"/>
+<rect x="270" y="840" width="9" height="1" fill="#808080"/>
+<rect x="279" y="840" width="9" height="1" fill="#808080"/>
+<rect x="288" y="840" width="9" height="1" fill="#808080"/>
+<rect x="297" y="840" width="9" height="1" fill="#808080"/>
+<rect x="306" y="840" width="9" height="1" fill="#808080"/>
+<rect x="315" y="840" width="9" height="1" fill="#808080"/>
+<rect x="324" y="840" width="9" height="1" fill="#808080"/>
+<rect x="333" y="840" width="9" height="1" fill="#808080"/>
+<rect x="342" y="840" width="9" height="1" fill="#808080"/>
+<rect x="351" y="840" width="9" height="1" fill="#808080"/>
+<rect x="360" y="840" width="9" height="1" fill="#808080"/>
+<rect x="369" y="840" width="9" height="1" fill="#808080"/>
+<rect x="378" y="840" width="9" height="1" fill="#808080"/>
+<rect x="387" y="840" width="9" height="1" fill="#808080"/>
+<rect x="396" y="840" width="9" height="1" fill="#808080"/>
+<rect x="405" y="840" width="9" height="1" fill="#808080"/>
+<rect x="414" y="840" width="9" height="1" fill="#808080"/>
+<rect x="423" y="840" width="9" height="1" fill="#808080"/>
+<rect x="432" y="840" width="9" height="1" fill="#808080"/>
+<rect x="441" y="840" width="9" height="1" fill="#808080"/>
+<rect x="450" y="840" width="9" height="1" fill="#808080"/>
+<rect x="459" y="840" width="9" height="1" fill="#808080"/>
+<rect x="468" y="840" width="9" height="1" fill="#808080"/>
+<rect x="477" y="840" width="9" height="1" fill="#808080"/>
+<rect x="486" y="840" width="9" height="1" fill="#808080"/>
+<rect x="495" y="840" width="9" height="1" fill="#808080"/>
+<rect x="504" y="840" width="9" height="1" fill="#808080"/>
+<rect x="513" y="840" width="9" height="1" fill="#808080"/>
+<rect x="522" y="840" width="9" height="1" fill="#808080"/>
+<rect x="531" y="840" width="9" height="1" fill="#808080"/>
+<rect x="540" y="840" width="9" height="1" fill="#808080"/>
+<rect x="549" y="840" width="9" height="1" fill="#808080"/>
+<rect x="558" y="840" width="9" height="1" fill="#808080"/>
+<rect x="567" y="840" width="9" height="1" fill="#808080"/>
+<rect x="576" y="840" width="9" height="1" fill="#808080"/>
+<rect x="585" y="840" width="9" height="1" fill="#808080"/>
+<rect x="594" y="840" width="9" height="1" fill="#808080"/>
+</svg>
