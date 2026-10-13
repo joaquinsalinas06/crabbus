@@ -941,15 +941,18 @@ export const register: Register = (on, options) => {
                 {cell('cost', TEXT.cellCost, <Text bold wrap="truncate-end" color={hex(C.peach)}>{m.metrics.costTxt}</Text>, <Text wrap="truncate-end" color={hex(C.peach)}>{m.metrics.costSpark || ' '}</Text>)}
               </Box>
               {m.metrics.limits.map(l => {
-                const bw = Math.max(6, W - 30)
+                // name (6) + bar + "  42%" (5) + "  resets …": the bar takes what the text leaves
+                const reset = l.reset !== undefined ? `  ${TEXT.usageResets(l.at, l.reset)}` : ''
+                // one width for every bar, so they line up: the longest reset text sets it
+                const longest = Math.max(...m.metrics.limits.map(x => (x.reset !== undefined ? 2 + TEXT.usageResets(x.at, x.reset).length : 0)))
+                const bw = Math.max(6, W - 2 - 6 - 5 - longest)
                 const [used, left] = meter(l.pct, bw)
                 return (
                   <Box key={`lim-${l.name}`} flexDirection="row">
-                    <Text color={hex(C.dim)}>{l.name.padEnd(6)}</Text>
-                    <Text color={hex(l.c)}>{used}</Text>
-                    <Text color={hex(C.track)}>{left}</Text>
-                    <Text bold color={hex(l.c)}>{`${Math.round(l.pct)}%`.padStart(5)}</Text>
-                    {l.reset !== undefined && <Box flexShrink={1} minWidth={0}><Text wrap="truncate-end" color={hex(C.faint)}>{`  ${TEXT.usageResets(l.reset)}`}</Text></Box>}
+                    <Box flexShrink={0}><Text color={hex(C.dim)}>{l.name.padEnd(6)}</Text></Box>
+                    <Box flexShrink={0}><Text><Text color={hex(l.c)}>{used}</Text><Text color={hex(C.track)}>{left}</Text></Text></Box>
+                    <Box flexShrink={0}><Text bold color={hex(l.c)}>{`${Math.round(l.pct)}%`.padStart(5)}</Text></Box>
+                    {reset && <Box flexShrink={1} minWidth={0}><Text wrap="truncate-end" color={hex(C.faint)}>{reset}</Text></Box>}
                   </Box>
                 )
               })}

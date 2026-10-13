@@ -56,7 +56,7 @@ export const TEXT = {
   cellTokens: 'TOKENS',
   cellCost: 'COST',
   secUsage: 'USAGE',
-  usageResets: (t: string) => `resets in ${t}`,
+  usageResets: (at: string | undefined, left: string) => (at ? `resets ${at} · in ${left}` : `resets in ${left}`),
   usageNone: 'no usage limits reported yet (they appear after the first reply on a subscription)',
   inFlight: 'in flight',
   live: 'live',

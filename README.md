@@ -89,12 +89,12 @@ sequenceDiagram
 - The **real session total** from Claude Code's own ledger (`session.measure`), with a sparkline.
   The master's share is the total minus the estimates.
 - Your plan's **usage limits** always on screen: the current 5-hour window and the weekly one, as
-  bars with the time left until each resets. No more typing `/usage` to check. They also show at the
+  bars with the local time each one resets and how long that is from now. No more typing `/usage` to check. They also show at the
   end of the line above the prompt (`5h 75% · week 54%`).
 
 ```
-5h    ━━━━━━━━━━━━━━━━━━──────  75%  resets in 2h 41m
-week  ━━━━━━━━━━━━━───────────  54%  resets in 4d 18h
+5h    ━━━━━━━━━━━━━━━━━━──────  79%  resets 21:10 · in 2h 35m
+week  ━━━━━━━━━━━━━───────────  55%  resets Sun 13:00 · in 4d 18h
 ```
 
 ### 📊 The `/bus` panel
