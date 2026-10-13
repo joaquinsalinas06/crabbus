@@ -81,13 +81,21 @@ sequenceDiagram
 - **You → agent:** open any agent in the `/bus` panel and type a message to it. It is tracked like
   the master's own messages.
 
-### 💸 Tokens and cost per agent
+### 💸 Tokens, cost and your plan's usage limits
 - Each subagent's token usage (in, out, cache hits) and **context window in use**, read from every
   model request (`turn.step`).
 - An estimated cost per agent at list prices, always shown with `≈` because no API reports a
   subagent's real cost.
 - The **real session total** from Claude Code's own ledger (`session.measure`), with a sparkline.
   The master's share is the total minus the estimates.
+- Your plan's **usage limits** always on screen: the current 5-hour window and the weekly one, as
+  bars with the time left until each resets. No more typing `/usage` to check. They also show at the
+  end of the line above the prompt (`5h 75% · week 54%`).
+
+```
+5h    ━━━━━━━━━━━━━━━━━━──────  75%  resets in 2h 41m
+week  ━━━━━━━━━━━━━───────────  54%  resets in 4d 18h
+```
 
 ### 📊 The `/bus` panel
 <p align="center"><img src="assets/panel.svg" alt="The /bus panel: metrics, the master's delegation tree and subagent cards" width="100%"></p>

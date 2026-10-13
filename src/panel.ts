@@ -9,7 +9,7 @@ import { uiStatus, type Activity, type AgentRec, type BusState, type Permission 
 import { costumeColor, type Pack } from './pack.ts'
 import { NO_USAGE, costOf, costParts, promptTokens, windowOf, type Usage } from './price.ts'
 import { paneList, shownName } from './scene.ts'
-import { C, ST, agoTxt, clock, ctxColor, dur, fc, fk, fit, prog, spark, toolColor, type UiStatus } from './theme.ts'
+import { C, ST, agoTxt, clock, ctxColor, dur, fc, fk, fit, limitName, prog, spark, toolColor, untilTxt, type UiStatus } from './theme.ts'
 
 // ---- one agent
 
@@ -137,6 +137,8 @@ export type ListModel = {
     costTxt: string
     costSpark: string
     summary: string
+    /** The account's usage windows (5h, week), most used first. */
+    limits: LimitView[]
   }
   liveTools: { n: string; k: number; c: number }[]
   activity: ActivityView[]
@@ -144,6 +146,18 @@ export type ListModel = {
 
 const sumUsage = (us: readonly (Usage | undefined)[]): Usage =>
   us.reduce<Usage>((x, u) => (u ? { input: x.input + u.input, output: x.output + u.output, cacheRead: x.cacheRead + u.cacheRead, cacheWrite: x.cacheWrite + u.cacheWrite } : x), NO_USAGE)
+
+export type LimitView = { name: string; pct: number; c: number; reset?: string }
+
+/** The account's rate-limit windows as the panel shows them: name, % used, color by fill, time to reset. */
+export const limitViews = (s: BusState, now: number): LimitView[] =>
+  (s.session?.limits ?? [])
+    .map(l => ({
+      name: limitName(l.kind),
+      pct: Math.max(0, Math.min(100, l.pct)),
+      c: ctxColor(l.pct),
+      ...(l.resetsAt !== undefined ? { reset: untilTxt(l.resetsAt - now) } : {}),
+    }))
 
 export const listModel = (s: BusState, now: number, opts: { filter: Filter; showAll: boolean }, pack: Pack = BUILTIN): ListModel => {
   const { shown, older } = paneList(s, now, opts.showAll)
@@ -198,6 +212,7 @@ export const listModel = (s: BusState, now: number, opts: { filter: Filter; show
       costTxt,
       costSpark: spark(ses.costHist ?? []),
       summary: `${tot > 0 ? `${dn}/${tot} stages` : 'no plans'} · ${costTxt}`,
+      limits: limitViews(s, now),
     },
     liveTools: [...live.entries()].map(([n, k]) => ({ n, k, c: toolColor(n) })),
     activity: activityView(s, s.activity ?? [], pack).slice(0, 5),

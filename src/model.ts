@@ -110,7 +110,12 @@ export type SessionInfo = {
   ctxWindow?: number
   ctxPercent?: number
   costHist?: number[]
+  /** The account's rate-limit windows (five_hour, seven_day, …) as the last response reported them. */
+  limits?: Limit[]
 }
+
+/** One rate-limit window: how much of it is used and when it resets (ms since epoch). */
+export type Limit = { kind: string; pct: number; resetsAt?: number }
 
 export type BusState = { agents: Record<string, AgentRec>; msgs: BusMsg[]; seq: number; activity?: Activity[]; pending?: Permission[]; session?: SessionInfo }
 
@@ -323,8 +328,8 @@ export const onUsage = (s: BusState, id: string | undefined, u: Usage, model: st
   }))
 }
 
-/** The ledger's real figures (`session.measure`): session cost and the main loop's context window. */
-export const onMeasure = (s: BusState, m: { costUsd?: number; ctxTokens?: number; ctxWindow?: number; ctxPercent?: number }): BusState => {
+/** The ledger's real figures (`session.measure`): session cost, the main loop's context window and the account's usage limits. */
+export const onMeasure = (s: BusState, m: { costUsd?: number; ctxTokens?: number; ctxWindow?: number; ctxPercent?: number; limits?: Limit[] }): BusState => {
   const ses = s.session ?? {}
   const grew = m.costUsd !== undefined && ses.costUsd !== undefined ? Math.max(0, m.costUsd - ses.costUsd) : 0
   return {
@@ -335,6 +340,7 @@ export const onMeasure = (s: BusState, m: { costUsd?: number; ctxTokens?: number
       ...(m.ctxTokens !== undefined ? { ctxTokens: m.ctxTokens } : {}),
       ...(m.ctxWindow !== undefined ? { ctxWindow: m.ctxWindow } : {}),
       ...(m.ctxPercent !== undefined ? { ctxPercent: m.ctxPercent } : {}),
+      ...(m.limits !== undefined ? { limits: m.limits.map(l => ({ ...l, kind: clip(l.kind, 24) })) } : {}),
     },
   }
 }
