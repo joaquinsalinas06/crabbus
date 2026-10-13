@@ -7,7 +7,7 @@ import { CARD_H, CARD_W, canvas, drawAgent, drawEnvelope, drawMaster, drawQuesti
 import { BUILTIN } from './builtin.ts'
 import { desaturate, halve } from './canvas.ts'
 import { uiStatus, type AgentRec, type BusState } from './model.ts'
-import { C, clean, type UiStatus } from './theme.ts'
+import { C, clean, ctxColor, limitName, type UiStatus } from './theme.ts'
 import { FALLBACK_ACTION, SLEEP_MS, costumeColor, labelOf, resolveAction, type Pack } from './pack.ts'
 import { TEXT } from './text.ts'
 
@@ -148,6 +148,10 @@ export const lineParts = (s: BusState, now: number, pack: Pack = BUILTIN): { tex
     parts.push({ text: shownName(a), color: costumeColor(pack, a.costume), bold: true })
     parts.push({ text: ` ${w.split(' ')[0]}${a.plan.length > 0 ? ` ${a.done}/${a.plan.length}` : ''}`, color })
   })
+  for (const l of s.session?.limits ?? []) {
+    parts.push({ text: ' · ', color: C.faint })
+    parts.push({ text: `${limitName(l.kind)} ${Math.round(l.pct)}%`, color: ctxColor(l.pct) })
+  }
   return parts
 }
 

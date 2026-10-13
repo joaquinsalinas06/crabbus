@@ -49,6 +49,17 @@ export const toolColor = (tool: string): number => TOOL_COLOR[tool] ?? C.dim
 
 export const ctxColor = (pct: number): number => (pct < 50 ? C.mint : pct < 75 ? C.yellow : C.pink)
 
+/** A usage window's short name: five_hour -> "5h", seven_day -> "week", a gateway's spend_limit -> "spend". */
+export const limitName = (kind: string): string => (kind === 'five_hour' ? '5h' : kind === 'seven_day' ? 'week' : kind === 'spend_limit' ? 'spend' : kind.replace(/_/g, ' '))
+
+/** Time left until a reset: "4d 6h", "2h 13m", "9m"; "now" once it has passed. */
+export const untilTxt = (ms: number): string => {
+  const m = Math.floor(ms / 60000)
+  if (m <= 0) return 'now'
+  const d = Math.floor(m / 1440), h = Math.floor(m / 60) % 24
+  return d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${pad(m % 60)}m` : `${m}m`
+}
+
 /** 182400 -> "182.4k", 1.2e6 -> "1.20M". */
 export const fk = (n: number): string => (n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : `${(n / 1000).toFixed(1)}k`)
 /** Dollars; `approx` marks an estimate. Under ten cents a third decimal keeps small spends visible. */

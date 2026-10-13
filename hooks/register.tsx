@@ -12,7 +12,7 @@ import { BUILTIN } from '../src/builtin.ts'
 import { MASTER, direct, emptyDirector, playOf, type Director } from '../src/director.ts'
 import { loadPack } from '../src/fit.ts'
 import { normalizeDesignJson } from '../src/legacy.ts'
-import { PERSON_DECIDES, describeInput, emptyState, onComplete, onMasterTool, onMeasure, onPermissionAnswer, onPermissionAsk, onReceive, onSend, onSpawn, onStep, onToolEnd, onToolStart, onUsage, parseStep, resolveTarget, statusReport, stepReceipt } from '../src/model.ts'
+import { PERSON_DECIDES, describeInput, emptyState, onComplete, onMasterTool, onMeasure, onPermissionAnswer, onPermissionAsk, onReceive, onSend, onSpawn, onStep, onToolEnd, onToolStart, onUsage, parseStep, resolveTarget, statusReport, stepReceipt, type Limit } from '../src/model.ts'
 import type { AgentRec, BusState, Completion, SpawnInfo } from '../src/model.ts'
 import { BUILTIN_ORIGIN, bundle, type DesignFile, type Pack } from '../src/pack.ts'
 import { FILTERS, TABS, detailModel, fallbackLines, filterTab, listModel, panelAgents, transcriptLines, type AgentView, type Filter, type TxLine, type TxTab } from '../src/panel.ts'
@@ -76,6 +76,13 @@ async function record($: EngineInterface, f: (s: BusState, t: number) => BusStat
   const t = await $.clock.now()
   await update($, bus, s => f(s, t))
 }
+
+/** The engine's rate-limit windows as the model keeps them (reset time in ms since epoch). */
+const limitsOf = (xs: readonly { kind: string; percentUsed: number; resetsAt?: string }[]): Limit[] =>
+  xs.map(x => {
+    const at = x.resetsAt ? Date.parse(x.resetsAt) : NaN
+    return { kind: x.kind, pct: x.percentUsed, ...(Number.isFinite(at) ? { resetsAt: at } : {}) }
+  })
 
 /**
  * Where the user's design files live: `<config dir>/crabbus/*.json`. Designs made before the rename sit in
@@ -325,6 +332,13 @@ export const register: Register = (on, options) => {
     await $.command.register({ name: 'costume', description: TEXT.costumeCmdDesc })
     await $.command.register({ name: 'disfraz', description: TEXT.legacyCostumeCmdDesc })
     await refreshDesigns($).catch(() => undefined)
+    // the usage limits as of now, so the bars show before this session's first reply
+    try {
+      const u = await $.session.usage()
+      if (u.rateLimits.length > 0) await record($, s => onMeasure(s, { limits: limitsOf(u.rateLimits) }))
+    } catch {
+      /* no figures yet */
+    }
     await $.tool.register({
       name: 'bus_step',
       description: 'For subagents: report your plan and progress to the master (plan, done, current, note, evidence, blocker, question, reply, ack, applied). Cheap; it only records state.',
@@ -499,7 +513,7 @@ export const register: Register = (on, options) => {
     return r
   })
 
-  // The ledger's real totals: session cost and the main loop's context window.
+  // The ledger's real totals: session cost, the main loop's context window and the account's usage limits.
   on('session.measure', async ($, e, next) => {
     try {
       await record($, s => onMeasure(s, {
@@ -507,6 +521,7 @@ export const register: Register = (on, options) => {
         ...(e.context.tokens !== undefined ? { ctxTokens: e.context.tokens } : {}),
         ctxWindow: e.context.window,
         ...(e.context.percent !== undefined ? { ctxPercent: e.context.percent } : {}),
+        limits: limitsOf(e.rateLimits),
       }))
     } catch {
       /* observation only */
@@ -925,6 +940,19 @@ export const register: Register = (on, options) => {
                 {cell('tok', TEXT.cellTokens, <Text wrap="truncate-end"><Text color={hex(C.cyan)}>↑</Text>{m.metrics.tokIn}</Text>, <Text wrap="truncate-end" color={hex(C.dim)}><Text color={hex(C.pink)}>↓</Text>{m.metrics.tokOut}</Text>)}
                 {cell('cost', TEXT.cellCost, <Text bold wrap="truncate-end" color={hex(C.peach)}>{m.metrics.costTxt}</Text>, <Text wrap="truncate-end" color={hex(C.peach)}>{m.metrics.costSpark || ' '}</Text>)}
               </Box>
+              {m.metrics.limits.map(l => {
+                const bw = Math.max(6, W - 30)
+                const [used, left] = meter(l.pct, bw)
+                return (
+                  <Box key={`lim-${l.name}`} flexDirection="row">
+                    <Text color={hex(C.dim)}>{l.name.padEnd(6)}</Text>
+                    <Text color={hex(l.c)}>{used}</Text>
+                    <Text color={hex(C.track)}>{left}</Text>
+                    <Text bold color={hex(l.c)}>{`${Math.round(l.pct)}%`.padStart(5)}</Text>
+                    {l.reset !== undefined && <Box flexShrink={1} minWidth={0}><Text wrap="truncate-end" color={hex(C.faint)}>{`  ${TEXT.usageResets(l.reset)}`}</Text></Box>}
+                  </Box>
+                )
+              })}
               {m.liveTools.length > 0 && (
                 <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
                   <Text color={hex(C.faint)}>{TEXT.inFlight}</Text>
