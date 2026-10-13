@@ -7,7 +7,7 @@ import { CARD_H, CARD_W, canvas, drawAgent, drawEnvelope, drawMaster, drawQuesti
 import { BUILTIN } from './builtin.ts'
 import { desaturate, halve } from './canvas.ts'
 import { uiStatus, type AgentRec, type BusState } from './model.ts'
-import { C, type UiStatus } from './theme.ts'
+import { C, clean, type UiStatus } from './theme.ts'
 import { FALLBACK_ACTION, SLEEP_MS, costumeColor, labelOf, resolveAction, type Pack } from './pack.ts'
 import { TEXT } from './text.ts'
 
@@ -114,7 +114,7 @@ export const bar = (done: number, total: number, width: number): string => {
   return '▰'.repeat(n) + '▱'.repeat(width - n)
 }
 
-const fit = (s: string, w: number): string => (s.length <= w ? s : `${s.slice(0, Math.max(0, w - 1))}…`)
+const fit = (s: string, w: number): string => { const t = clean(s); return t.length <= w ? t : `${t.slice(0, Math.max(0, w - 1))}…` }
 
 export const agentLabel = (a: AgentRec, now: number, rows: number, pack: Pack = BUILTIN): Label => {
   const [w, color] = word(pack, a, now)

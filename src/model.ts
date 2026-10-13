@@ -9,7 +9,7 @@
 import { BUILTIN } from './builtin.ts'
 import { resolveCostume, type Pack } from './pack.ts'
 import { NO_USAGE, addUsage, promptTokens, type Usage } from './price.ts'
-import type { UiStatus } from './theme.ts'
+import { clean, type UiStatus } from './theme.ts'
 
 /** The observed classification of the last tool call (the drawn action is chosen in pack.ts). */
 type Anim = string
@@ -124,7 +124,10 @@ const MAX_TESTS = 12
 const MAX_MSGS = 100
 const MAX_TEXT = 400
 
-const clip = (s: string, n = MAX_TEXT): string => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
+const clip = (raw: string, n = MAX_TEXT): string => {
+  const s = clean(raw)
+  return s.length > n ? `${s.slice(0, n - 1)}…` : s
+}
 
 // ---- costumes: wardrobe rules first, then rotation without repeats (see pack.ts)
 
@@ -187,11 +190,11 @@ export const onSpawn = (s: BusState, i: SpawnInfo, now: number, pack: Pack = BUI
   const look = resolveCostume(pack, i, taken, now)
   const rec: AgentRec = {
     id: i.id,
-    type: i.type,
+    type: clip(i.type, 80),
     description: clip(i.description, 80),
-    ...(i.name ? { name: i.name } : {}),
-    ...(i.model ? { model: i.model } : {}),
-    ...(i.mode ? { mode: i.mode } : {}),
+    ...(i.name ? { name: clip(i.name, 80) } : {}),
+    ...(i.model ? { model: clip(i.model, 80) } : {}),
+    ...(i.mode ? { mode: clip(i.mode, 40) } : {}),
     costume: look.costume,
     ...(look.nickname ? { nickname: look.nickname } : {}),
     status: 'running',
@@ -209,11 +212,12 @@ export const onSpawn = (s: BusState, i: SpawnInfo, now: number, pack: Pack = BUI
     questions: [],
     replies: [],
   }
-  return log({ ...s, agents: { ...s.agents, [i.id]: rec } }, { at: now, id: i.id, st: 'thinking', text: `spawned · ${i.type}` })
+  return log({ ...s, agents: { ...s.agents, [i.id]: rec } }, { at: now, id: i.id, st: 'thinking', text: `spawned · ${rec.type}` })
 }
 
 /** A tool call began in this agent's loop (observed). Unknown agents are adopted: a loop the spawn hook missed still shows. */
-export const onToolStart = (s: BusState, id: string, tool: string, input: Record<string, unknown>, now: number): BusState => {
+export const onToolStart = (s: BusState, id: string, rawTool: string, input: Record<string, unknown>, now: number): BusState => {
+  const tool = clip(rawTool, 80)
   const base = s.agents[id] ? s : onSpawn(s, { id, type: 'unknown', description: '(not seen at spawn)' }, now)
   const arg = describeInput(tool, input)
   const next = touch(base, id, a => ({
@@ -237,7 +241,7 @@ export const onToolStart = (s: BusState, id: string, tool: string, input: Record
 export const onMasterTool = (s: BusState, tool: string, input: Record<string, unknown>, running: boolean, now: number): BusState => {
   const ses = s.session ?? {}
   return running
-    ? { ...s, session: { ...ses, lastTool: tool, lastToolInput: describeInput(tool, input), lastToolAt: now, inTool: true } }
+    ? { ...s, session: { ...ses, lastTool: clip(tool, 80), lastToolInput: describeInput(tool, input), lastToolAt: now, inTool: true } }
     : { ...s, session: { ...ses, inTool: false } }
 }
 
@@ -336,8 +340,9 @@ export const onMeasure = (s: BusState, m: { costUsd?: number; ctxTokens?: number
 }
 
 /** A subagent's tool call needs the person: it waits in the panel. */
-export const onPermissionAsk = (s: BusState, p: Permission): BusState => {
-  if ((s.pending ?? []).some(x => x.id === p.id)) return s
+export const onPermissionAsk = (s: BusState, raw: Permission): BusState => {
+  if ((s.pending ?? []).some(x => x.id === raw.id)) return s
+  const p: Permission = { ...raw, tool: clip(raw.tool, 80), arg: clip(raw.arg, 200) }
   // a permission ask is the person's: 'waiting for you' in the panel, as Claude Code's dialog shows it
   const next = touch({ ...s, pending: [...(s.pending ?? []), p] }, p.agentId, a => ({ ...a, lastEventAt: p.at }))
   return log(next, { at: p.at, id: p.agentId, st: 'blocked', text: `needs approval: ${p.tool}${p.arg ? ` ${p.arg}` : ''}` })

@@ -104,11 +104,12 @@ Layer step: `{ "d": "drawing_name", "x": 0, "y": -1, "palette": { "r": "#ff0000"
 ```json
 {
   "type": "action", "id": "commit", "label": "⎇ commit", "color": "#f78166",
-  "when": { "tool": "Bash", "input": "\\bgit\\b(\\s+-C\\s+\\S+)*\\s+commit\\b" }, "priority": 60, "duration": 2500,
+  "when": { "tool": "Bash", "input": "\\bgit\\b[^|;&\\n]{0,120}\\scommit\\b" }, "priority": 60, "duration": 2500,
   "pose": [{ "fixed": { "leftArm": 1, "rightArm": 1 } }, { "steps": [{ "jump": 0 }, { "jump": 1 }] }],
   "effect": [{ "drawings": { "a": ["s.....s"] }, "palette": { "s": "#f5c542" }, "anim": { "*": [{ "steps": [{}, { "hidden": true }] }] } }]
 }
 ```
+- Patterns must be safe to run on every tool call: a repeated group that repeats inside (`(a+)+`, `(\s+\S+)*`), a repeated alternation (`(a|b)*`) and backreferences are rejected. Repeat a single character class instead (`[^;]{0,120}`).
 - `when`: object or array of criteria: `tool` (regex matching tool name), `input` (regex matching input command/path), `state` (`asleep`, `finished`, `failed`, `blocked`, `error`, `thinking`, `working`, `starting`, `tests-ok`). Note: condition states use `finished` and `asleep`, while built-in action IDs are `done` and `sleep`.
 - `priority`: highest matching priority wins. Defaults: sleep 100, done 99, blocked 90, testing 55, reading/writing 50, error 40, thinking 10, walk 5. Custom actions default to 60.
 - `duration` (ms): keeps display active for specified ms after tool ends (useful for brief commands like `git commit`).
