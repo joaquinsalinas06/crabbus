@@ -164,9 +164,11 @@ const palette = (v: unknown, where: string): Record<string, number> => {
 /**
  * Why a pattern could backtrack catastrophically (ReDoS), or null. Design files are shared, and their
  * patterns run against tool input on every tool call, so anything that can take exponential time is
- * refused: a repeated group that itself repeats (`(a+)+`), a repeated alternation (`(a|ab)*`) and
- * backreferences. Repetition of single atoms (`\s+`, `[^;]{0,80}`) stays linear and is allowed.
+ * refused: a repeated group that itself repeats or is optional inside (`(a+)+`, `(a?)+`), a repeated
+ * alternation (`(a|ab)*`), backreferences, and more than MAX_REPEATS repetitions in one pattern (each
+ * overlapping `\s*` multiplies the work: eight of them in a row take minutes on 60 spaces).
  */
+const MAX_REPEATS = 3
 export const unsafePattern = (src: string): string | null => {
   type Frame = { repeats: boolean; alt: boolean }
   const stack: Frame[] = [{ repeats: false, alt: false }]
@@ -184,6 +186,8 @@ export const unsafePattern = (src: string): string | null => {
     if (n > 0 && src[i + n] === '?') n++ // lazy
     return [n, rep]
   }
+  let repeats = 0
+  const tooMany = (): string | null => (++repeats > MAX_REPEATS ? `more than ${MAX_REPEATS} repetitions (*, +, {n,m}) in one pattern` : null)
   let i = 0
   while (i < src.length) {
     const ch = src[i] as string
@@ -213,13 +217,16 @@ export const unsafePattern = (src: string): string | null => {
       const [n, rep] = quant(i + 1)
       if (rep && g.repeats) return 'a repeated group contains another repetition, as in (a+)+ (rewrite it with a single quantifier, e.g. [^;]{0,80})'
       if (rep && g.alt) return 'a repeated group contains an alternation, as in (a|ab)* (repeat a character class instead)'
+      if (rep) { const why = tooMany(); if (why) return why }
       const parent = stack[stack.length - 1] as Frame
-      parent.repeats ||= g.repeats || rep
+      parent.repeats ||= g.repeats || rep || n > 0
       i += 1 + n
       continue
     } else i++
     const [n, rep] = quant(i)
-    if (rep) top.repeats = true
+    // an optional atom inside a group counts too: (a?)+ can match the empty string in many ways
+    if (n > 0) top.repeats = true
+    if (rep) { const why = tooMany(); if (why) return why }
     i += n
   }
   return null
