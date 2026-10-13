@@ -8,10 +8,10 @@ import { unsafePattern } from '../src/pack.ts'
 import { clean, fit } from '../src/theme.ts'
 
 test('security: patterns that can backtrack catastrophically are refused', () => {
-  for (const p of ['(a+)+$', '(a|ab)*c', '(\\w+\\s?)*$', '(.*a){12}', '(\\s+-C\\s+\\S+)*', '(x)\\1', '(?<n>a)\\k<n>', '(a?){25}a{25}', '(a?)+b', '\\s*\\s*\\s*\\s*\\s*x']) {
+  for (const p of ['(a+)+$', '(a|ab)*c', '(\\w+\\s?)*$', '(.*a){12}', '(\\s+-C\\s+\\S+)*', '(x)\\1', '(?<n>a)\\k<n>', '(a?){25}a{25}', '(a?)+b', '\\s*\\s*\\s*x', '[^](a+)+]', '[](a+)+]', '(ab)+', '(?=a+)+', '(a){2,}']) {
     assert.ok(unsafePattern(p), `should refuse ${p}`)
   }
-  for (const p of ['Read|Grep|Glob', '^general-purpose$', '\\bgit\\b[^|;&\\n]{0,120}\\scommit\\b', '(ab)+', '[(+)]*x', '(?:Edit|Write)']) {
+  for (const p of ['Read|Grep|Glob', '^general-purpose$', '\\bgit\\b[^|;&\\n]{0,120}\\scommit\\b', '[(+)]*x', '(?:Edit|Write)', '(ab)?c', '[\\]]+x', 'a{3}b{2}']) {
     assert.equal(unsafePattern(p), null, `should allow ${p}`)
   }
 })

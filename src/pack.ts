@@ -162,16 +162,17 @@ const palette = (v: unknown, where: string): Record<string, number> => {
 }
 
 /**
- * Why a pattern could backtrack catastrophically (ReDoS), or null. Design files are shared, and their
- * patterns run against tool input on every tool call, so anything that can take exponential time is
- * refused: a repeated group that itself repeats or is optional inside (`(a+)+`, `(a?)+`), a repeated
- * alternation (`(a|ab)*`), backreferences, and more than MAX_REPEATS repetitions in one pattern (each
- * overlapping `\s*` multiplies the work: eight of them in a row take minutes on 60 spaces).
+ * Why a pattern could take too long to run, or null. Design files are shared, and their patterns run
+ * against tool input on every tool call, so only a small, plainly linear subset is accepted:
+ * - no repeated group at all (`(ab)+`, `(a?){3}`): repeat a single character or class instead;
+ * - no backreferences;
+ * - at most MAX_REPEATS repetitions (*, +, {n,m}) in the whole pattern, since each overlapping one
+ *   multiplies the work (eight `\s*` in a row take minutes on 60 spaces).
+ * Character classes follow JavaScript's rules: `[]` is empty and `[^]` is any character, so the first
+ * `]` always closes the class (reading it as PCRE does let `[^](a+)+]` slip through).
  */
-const MAX_REPEATS = 3
+const MAX_REPEATS = 2
 export const unsafePattern = (src: string): string | null => {
-  type Frame = { repeats: boolean; alt: boolean }
-  const stack: Frame[] = [{ repeats: false, alt: false }]
   // the quantifier at i: [chars it spans, whether it repeats more than once]
   const quant = (i: number): [number, boolean] => {
     const ch = src[i]
@@ -187,46 +188,28 @@ export const unsafePattern = (src: string): string | null => {
     return [n, rep]
   }
   let repeats = 0
-  const tooMany = (): string | null => (++repeats > MAX_REPEATS ? `more than ${MAX_REPEATS} repetitions (*, +, {n,m}) in one pattern` : null)
   let i = 0
   while (i < src.length) {
     const ch = src[i] as string
-    const top = stack[stack.length - 1] as Frame
+    let group = false
     if (ch === '\\') {
       const nx = src[i + 1] ?? ''
       if (/[1-9]/.test(nx) || (nx === 'k' && src[i + 2] === '<')) return 'backreferences are not allowed'
       i += 2
     } else if (ch === '[') {
       i++
-      if (src[i] === '^') i++
-      if (src[i] === ']') i++
       while (i < src.length && src[i] !== ']') i += src[i] === '\\' ? 2 : 1
       i++
-    } else if (ch === '(') {
-      stack.push({ repeats: false, alt: false })
-      i++
-      if (src[i] === '?') { const m = /^\?(?::|=|!|<=|<!|<[A-Za-z_][A-Za-z0-9_]*>)/.exec(src.slice(i)); i += m ? m[0].length : 1 }
-      continue
-    } else if (ch === '|') {
-      top.alt = true
-      i++
-      continue
     } else if (ch === ')') {
-      if (stack.length === 1) return null // unbalanced: RegExp itself reports it
-      const g = stack.pop() as Frame
-      const [n, rep] = quant(i + 1)
-      if (rep && g.repeats) return 'a repeated group contains another repetition, as in (a+)+ (rewrite it with a single quantifier, e.g. [^;]{0,80})'
-      if (rep && g.alt) return 'a repeated group contains an alternation, as in (a|ab)* (repeat a character class instead)'
-      if (rep) { const why = tooMany(); if (why) return why }
-      const parent = stack[stack.length - 1] as Frame
-      parent.repeats ||= g.repeats || rep || n > 0
-      i += 1 + n
-      continue
+      group = true
+      i++
+    } else if (ch === '(' || ch === '|') {
+      i++
+      continue // nothing to repeat yet; a quantifier right after is a syntax error RegExp reports
     } else i++
     const [n, rep] = quant(i)
-    // an optional atom inside a group counts too: (a?)+ can match the empty string in many ways
-    if (n > 0) top.repeats = true
-    if (rep) { const why = tooMany(); if (why) return why }
+    if (group && rep) return 'a group cannot be repeated (repeat a single character or class instead, e.g. [^;]{0,80})'
+    if (rep && ++repeats > MAX_REPEATS) return `more than ${MAX_REPEATS} repetitions (*, +, {n,m}) in one pattern`
     i += n
   }
   return null

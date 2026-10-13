@@ -109,7 +109,7 @@ Layer step: `{ "d": "drawing_name", "x": 0, "y": -1, "palette": { "r": "#ff0000"
   "effect": [{ "drawings": { "a": ["s.....s"] }, "palette": { "s": "#f5c542" }, "anim": { "*": [{ "steps": [{}, { "hidden": true }] }] } }]
 }
 ```
-- Patterns must be safe to run on every tool call: a repeated group that repeats inside (`(a+)+`, `(\s+\S+)*`), a repeated alternation (`(a|b)*`) and backreferences are rejected. Repeat a single character class instead (`[^;]{0,120}`).
+- Patterns must be safe to run on every tool call: a group cannot be repeated (`(ab)+`, `(\s+\S+)*`), backreferences are not allowed, and a pattern holds at most 2 repetitions (`*`, `+`, `{n,m}`). Repeat a single character or class instead (`[^;]{0,120}`).
 - `when`: object or array of criteria: `tool` (regex matching tool name), `input` (regex matching input command/path), `state` (`asleep`, `finished`, `failed`, `blocked`, `error`, `thinking`, `working`, `starting`, `tests-ok`). Note: condition states use `finished` and `asleep`, while built-in action IDs are `done` and `sleep`.
 - `priority`: highest matching priority wins. Defaults: sleep 100, done 99, blocked 90, testing 55, reading/writing 50, error 40, thinking 10, walk 5. Custom actions default to 60.
 - `duration` (ms): keeps display active for specified ms after tool ends (useful for brief commands like `git commit`).
