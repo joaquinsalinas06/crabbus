@@ -277,7 +277,7 @@ for (const surface of ['terminal', 'desktop'] as const) describe(`crabbus (${sur
     on('fs.read', ($, e) => ({ value: files[e.path.replace('/cfg/crabbus/', '')] ?? '' }))
     on('fs.write', ($, e) => { files[e.path.replace('/cfg/crabbus/', '')] = e.text; wrote.push(e.path); return { value: undefined } })
     let placed = true
-    on('ui.open', () => ({ value: { isPlaced: placed } }))
+    on('ui.open', () => ({ value: { isPlaced: placed } as never }))
     const told: string[] = []
     on('prompt.submit', ($, e) => { told.push(e.text); return { text: e.text } })
     await $.session.start(start)

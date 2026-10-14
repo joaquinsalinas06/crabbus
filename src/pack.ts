@@ -498,12 +498,12 @@ const parseRules = (o: Obj, origin = 'rules'): { active?: string[]; rules: Rule[
   const rawKinds = o['kinds']
   if (rawKinds !== undefined) {
     if (!isObj(rawKinds)) bad('"kinds" must be a kind -> { words, description } object')
-    for (const [k, v] of Object.entries(rawKinds as Obj)) {
+    for (const [k, v] of Object.entries(rawKinds as Obj) as [string, unknown][]) {
       if (!ID.test(k)) bad(`kinds.${k}: kind identifier must be lowercase alphanumeric, dash, dot or underscore (got "${k}")`)
-      if (!isObj(v)) bad(`kinds.${k}: must be an object with "words": [...]`)
-      const rawWords = v['words']
-      if (!Array.isArray(rawWords) || rawWords.length === 0) bad(`kinds.${k}: "words" must be a non-empty list of regular expressions`)
-      const words = rawWords.map((w, idx) => regex(w, `kinds.${k}.words[${idx}]`))
+      if (!isObj(v)) { bad(`kinds.${k}: must be an object with "words": [...]`); continue }
+      const rawWords: unknown[] = Array.isArray(v['words']) ? v['words'] : []
+      if (rawWords.length === 0) bad(`kinds.${k}: "words" must be a non-empty list of regular expressions`)
+      const words = rawWords.map((w: unknown, idx: number) => regex(w, `kinds.${k}.words[${idx}]`))
       const desc = str(v, 'description', true)
       kinds[k] = { words, ...(desc ? { description: desc } : {}) }
     }
