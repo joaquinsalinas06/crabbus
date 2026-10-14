@@ -1,0 +1,5 @@
+# files about the graph itself: they would only add nodes describing graphify
+AGENTS.md
+CLAUDE.md
+# empty logs from the experiment runs: nothing to extract, re-queued on every update otherwise
+evidence/**/stderr.txt
