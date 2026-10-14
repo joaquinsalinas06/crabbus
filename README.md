@@ -167,6 +167,8 @@ CrabBus plugin.
 
 ### The wardrobe
 
+<p align="center"><img src="assets/wardrobe.svg" alt="The wardrobe tab: the Tell CrabBus box, a page of costumes walking at full size with the page arrows at their sides, and the picked costume's card with its switches and rules" width="420"></p>
+
 **The grid** shows every costume walking at full size, four or six to a page; turn pages with the
 arrows at its sides. Each card tells you its state at a glance:
 
@@ -220,7 +222,7 @@ The same skill works in a normal conversation:
 
 > *"Give the reviewer a capybara hat"* · *"a Christmas costume for everyone"* · *"make it jump when it runs `git commit`"*
 
-<p align="center"><img src="assets/custom-crew.gif" alt="Five costumes made with the design skill (capybara hood, capybara fisher, french, dino, christmas) going through every action, including a custom git commit celebration" width="100%"></p>
+<p align="center"><img src="assets/custom-crew.gif" alt="Seven costumes made with the design skill (capybara hood, capybara fisher, french, dino, christmas, pumpkin, Peru fan) going through every action, including a custom git commit celebration" width="100%"></p>
 
 It handles more than costumes:
 
