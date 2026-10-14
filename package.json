@@ -6,5 +6,8 @@
   "scripts": {
     "spec": "node --test spec/*.spec.ts",
     "preview": "node tools/preview.ts evidence/art/sheet-dark.png 4"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
   }
 }
