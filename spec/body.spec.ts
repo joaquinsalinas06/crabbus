@@ -74,6 +74,23 @@ test('bodies: a body brings its own color and fixed palette; a costume color sti
   }
 })
 
+test('bodies: body layers animate per action: the capybara sniffs while reading, chews while writing', () => {
+  const bare = compilePack([{ file: 'c.json', json: { type: 'costume', id: 'c', name: 'c', color: '#cf7f45', body: { id: 'capybara' }, pieces: [] } }], BUILTIN)
+  const frames = (action: string) => [0, 1, 2, 3].map(t => {
+    const px: string[] = []
+    renderAgent((x, y, col) => px.push(`${x},${y},${col}`), 0, 0, bare, 'c', action, t)
+    return px.join(';')
+  })
+  assert.ok(new Set(frames('reading')).size > 1)
+  assert.ok(new Set(frames('writing')).size > 1)
+  for (const layer of [{ x: 0, y: 0, motion: 'body', rows: ['B'], anim: { walk: [{ fixed: { d: 'missing' } }] } },
+    { x: 0, y: 0, motion: 'body', rows: ['B'], frames: { a: ['Q'] } },
+    { x: 0, y: 0, motion: 'body', rows: ['B'], anim: { walk: [{ fixed: { y: 9 } }] } }]) {
+    const b = robot(); b.layers.push(layer)
+    assert.ok(compilePack([{ file: 'bad.json', json: b }], BUILTIN).problems.some(x => x.fatal), JSON.stringify(layer))
+  }
+})
+
 test('bodies: a held prop moves to the paw the body has where the crab has its claw', () => {
   const cap = BUILTIN.bodies.capybara!
   assert.deepEqual(anchorShift(BUILTIN.bodies.crab!, 'claw.left'), { x: 0, y: 0 })

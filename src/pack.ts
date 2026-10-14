@@ -12,7 +12,7 @@
 
 import { CARD_H, CARD_W, mix, stampWith, type Put } from './canvas.ts'
 import { normalizeDesignJson, resolveLegacyId } from './legacy.ts'
-import { ANCHORS, BODY_LAYER, CLAY, EYES, FACE_SLOTS, POSE0, SLOTS, TAG, anchorShift, bodyAnchorMotion, bodyAnchorOffset, drawBody, mirrorPose, slotLayer, turned, type Anchor, type Pose, type Slot, type BodyDef, type BodyMotion } from './rig.ts'
+import { ANCHORS, BODY_LAYER, CLAY, EYES, FACE_SLOTS, POSE0, SLOTS, TAG, anchorShift, bodyAnchorMotion, bodyAnchorOffset, drawBody, type BodyLayer, type BodyStep, mirrorPose, slotLayer, turned, type Anchor, type Pose, type Slot, type BodyDef, type BodyMotion } from './rig.ts'
 import type { KindDef } from './kinds.ts'
 
 export const SLEEP_MS = 8000 // after this, a finished agent dozes instead of cheering
@@ -462,7 +462,42 @@ const parseBody = (o: Obj, origin: string): BodyDef => {
         when.kick = kicks as ('left' | 'right' | 'none')[]
       }
     }
-    return { ...point, rows, motion: motion(v['motion']), when }
+    // other drawings of this layer, and per-action tracks that pick them or shift the layer (an ear twitch)
+    const frames: Record<string, string[]> = {}
+    if (v['frames'] !== undefined) {
+      const f = v['frames']
+      if (!isObj(f) || Object.keys(f).length > 8) return bad(`body layer ${i}: "frames" must name up to 8 drawings`)
+      for (const [name, fr] of Object.entries(f)) {
+        if (!Array.isArray(fr) || fr.length < 1 || fr.length > CARD_H || fr.some(r => typeof r !== 'string' || r.length < 1 || r.length > CARD_W || [...r].some(ch => !allowed.has(ch))))
+          bad(`body layer ${i}: frame "${name}" must hold 1 to 14 rows of body pixels`)
+        frames[name] = fr as string[]
+      }
+    }
+    const step = (s: unknown, w: string): BodyStep => {
+      if (!isObj(s)) return bad(`${w}: a step must be an object`)
+      const out: BodyStep = {}
+      for (const [k, val] of Object.entries(s)) {
+        if (k === 'd') {
+          if (typeof val !== 'string' || !Object.hasOwn(frames, val)) bad(`${w}: frame "${String(val)}" does not exist in this layer`)
+          out.d = val as string
+        } else if (k === 'x' || k === 'y') {
+          if (typeof val !== 'number' || !Number.isInteger(val) || Math.abs(val) > 3) bad(`${w}: "${k}" must be an integer between -3 and 3`)
+          out[k] = val as number
+        } else if (k === 'hidden') {
+          if (typeof val !== 'boolean') bad(`${w}: "hidden" must be true or false`)
+          out.hidden = val as boolean
+        } else bad(`${w}: "${k}" is not part of a body step (d, x, y, hidden)`)
+      }
+      return out
+    }
+    let anim: Record<string, Track<BodyStep>[]> | undefined
+    if (v['anim'] !== undefined) {
+      const a = v['anim']
+      if (!isObj(a)) return bad(`body layer ${i}: "anim" must be an action -> tracks object`)
+      anim = {}
+      for (const [k, t] of Object.entries(a)) anim[k] = tracks(t, `body layer ${i}.anim.${k}`, step)
+    }
+    return { ...point, rows, motion: motion(v['motion']), when, ...(Object.keys(frames).length ? { frames } : {}), ...(anim ? { anim } : {}) }
   })
   const a = o['anchors']
   if (!isObj(a)) return bad('body anchors must define every named anchor')
@@ -792,6 +827,12 @@ const drawLayer = (put: Put, ox: number, oy: number, c: Layer, off: { x: number;
 
 // ---- drawing one agent
 
+/** A body layer's step for this action and tick: its own tracks for the action, else for every action. */
+const bodyStepOf = (action: string, t: number) => (layer: BodyLayer): BodyStep => {
+  const anim = layer.anim as Record<string, Track<BodyStep>[]> | undefined
+  return anim ? evalTracks(anim[action] ?? anim['*'] ?? [], t, (a, b) => ({ ...a, ...b }), {}) : {}
+}
+
 /** A costume's body: the one it names, else the crab. There is no crew-wide default. */
 export const effectiveBodyId = (pack: Pack, costume: string): string => pack.costumes[costume]?.bodyId ?? 'crab'
 
@@ -840,14 +881,14 @@ export const renderAgent = (put: Put, ox: number, oy: number, pack: Pack, costum
   let bodyDrawn = false
   for (const p of layers) {
     if (!bodyDrawn && slotLayer(p.slot) > BODY_LAYER) {
-      if (pl.rig) drawBody(body, ox, oy, pl.body, pl.pose, pl.rig, d?.eyes)
+      if (pl.rig) drawBody(body, ox, oy, pl.body, pl.pose, pl.rig, d?.eyes, bodyStepOf(actionId, t))
       bodyDrawn = true
     }
     // a piece drawn for this body moves with its anchor; one drawn on the crab moves onto this body first
     const off = !pl.rig ? { x: 0, y: 0 } : p.body ? bodyAnchorMotion(pl.rig, p.anchor, pl.pose) : bodyAnchorOffset(pl.rig, p.anchor, pl.pose)
     for (const c of p.layers) drawLayer(body, ox, oy, c, off, actionId, t, TAG.piece(p.id), p.free)
   }
-  if (!bodyDrawn && pl.rig) drawBody(body, ox, oy, pl.body, pl.pose, pl.rig, d?.eyes)
+  if (!bodyDrawn && pl.rig) drawBody(body, ox, oy, pl.body, pl.pose, pl.rig, d?.eyes, bodyStepOf(actionId, t))
   if (pl.effect && a) {
     // a held prop goes to the claw (or paw) this body has where the crab's is; other effects stay on the card
     const side = a.hand ? (pl.mirror ? (a.hand === 'left' ? 'right' : 'left') : a.hand) : undefined

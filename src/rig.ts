@@ -116,7 +116,13 @@ export type BodyLayer = BodyPoint & {
   rows: string[]
   motion: BodyMotion
   when?: { legs?: 0 | 1; kick?: ('left' | 'right' | 'none')[] }
+  /** Other drawings of this layer by name (an ear up, a nose mid-sniff), picked by `anim`. */
+  frames?: Record<string, string[]>
+  /** Per-action tracks (pack.ts parses and evaluates them), like a piece layer's `anim`. */
+  anim?: unknown
 }
+/** What a layer's animation says at this tick: another frame, a shift, or hidden. */
+export type BodyStep = { d?: string; x?: number; y?: number; hidden?: boolean }
 export type BodyDef = {
   id: string
   name: string
@@ -162,13 +168,16 @@ export const anchorShift = (body: BodyDef, anchor: Anchor): BodyPoint =>
 
 const bodyPal = (color: number): Record<string, number> => ({ H: mix(color, 0xffffff, 0.22), B: color, S: mix(color, 0x000000, 0.28) })
 
-export const drawBody = (put: Put, ox: number, oy: number, color: number, p: Pose, body: BodyDef, eyeColor = body.eyes.color ?? INK): void => {
+export const drawBody = (put: Put, ox: number, oy: number, color: number, p: Pose, body: BodyDef, eyeColor = body.eyes.color ?? INK, stepOf: (layer: BodyLayer) => BodyStep = () => ({})): void => {
   const pal = { ...bodyPal(color), ...body.palette }
   for (const layer of body.layers) {
     if (layer.when?.legs !== undefined && layer.when.legs !== p.legs) continue
     if (layer.when?.kick && !layer.when.kick.includes(p.kick ?? 'none')) continue
     const off = motionOffset(body, layer.motion, p)
-    stampWith(put, ox + layer.x + off.x, oy + layer.y + off.y, layer.rows, pal, TAG.body)
+    const s = stepOf(layer)
+    if (s.hidden) continue
+    const rows = (s.d ? layer.frames?.[s.d] : undefined) ?? layer.rows
+    stampWith(put, ox + layer.x + off.x + (s.x ?? 0), oy + layer.y + off.y + (s.y ?? 0), rows, pal, TAG.body)
   }
   if (p.facingAway) return
   const off = motionOffset(body, 'body', p)

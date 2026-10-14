@@ -49,6 +49,11 @@ A `type: "body"` object contains `id`, `name`, `layers`, `anchors`, `armLift`, a
 - `motion` is `body`, `ground`, `claw.left`, `claw.right`, or `card`. Body follows bob,
   lift and horizontal shake; ground skips bob; claws also follow the corresponding arm.
   `armLift.left` and `.right` specify the displacement at raised arm state 1.
+- A layer may add `frames` (up to 8 other drawings by name) and `anim`, per-action tracks
+  like a piece's (`"*"` for every other action) whose steps take `d` (a frame), `x`/`y`
+  (-3 to 3) and `hidden`: ears that twitch, a nose that sniffs while `reading`, a mouth that
+  chews while `writing`. Keep moves inside the card through jumps (`done`, `master.hop`):
+  move sideways near the top row.
 - Optional layer `when.legs` is 0 or 1; `when.kick` lists `left`, `right`, or `none`.
   Supply normal and kicking leg layers as needed. Layer order is paint order.
 - Every anchor (`card`, `body`, `head`, `face`, `claw.left`, `claw.right`, `ground`)
