@@ -72,6 +72,8 @@ test('external tokens never affect Claude cost; resume and tool IDs preserve att
   assert.equal(s.agents.ext!.inTool, true)
   const view = agentView(s, s.agents.ext!, 1, 6)
   assert.equal(view.costTxt, 'subscription'); assert.equal(view.ctxPct, undefined)
+  assert.equal(s.agents.ext!.requests, undefined)
+  assert.equal(s.agents.ext!.lastPrompt, undefined)
   assert.equal(detailModel(s, s.agents.ext!, [s.agents.ext!], 6).cost.parts.length, 0)
   assert.equal(listModel(s, 6, { filter: 'all', showAll: true }).master.cost, 0)
   const resumed = onResume(s, 'ext', 7, true)

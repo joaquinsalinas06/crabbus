@@ -805,7 +805,7 @@ export const register: Register = (on, options) => {
       await refreshDesigns($).catch(() => undefined)
       const fullText = `${e.description} ${e.prompt}`
       const matched = classifyDeterministic(pack.kinds, fullText)
-      const original = e.resume?.agentId ?? started.agentId
+      const original = canonicalId(e.resume?.agentId ?? started.agentId)!
       if (original !== started.agentId) aliases.set(started.agentId, original)
       const info: SpawnInfo = {
         id: original,
