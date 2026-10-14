@@ -1,6 +1,9 @@
 // The state contract must be self-contained (validate refuses any import), so these shapes
 // repeat src/model.ts's BusState structurally. tests/contract.test.ts keeps the two in step.
 declare module 'claude-code' {
+  interface McpToolInputs {
+    mcp__crabbus__bus_delegate: { agent: string; prompt: string; description?: string; to?: string; mode?: 'edit' | 'read' }
+  }
   interface PluginState {
     'crabbus': {
       bus: {
@@ -8,6 +11,7 @@ declare module 'claude-code' {
           string,
           {
             id: string
+            ext?: { cli: 'codex' | 'agy' | 'claude'; profile: string; session?: string; worktree?: string; branch?: string }
             type: string
             description: string
             name?: string
@@ -36,7 +40,7 @@ declare module 'claude-code' {
             usedModel?: string
             requests?: number
             usageHist?: number[]
-            toolLog?: { tool: string; arg: string; at: number; ms?: number; ok?: boolean }[]
+            toolLog?: { id?: string; tool: string; arg: string; at: number; ms?: number; ok?: boolean }[]
             askedAt?: number | undefined
             plan: string[]
             done: number

@@ -62,7 +62,7 @@ export const TEXT = {
   live: 'live',
   subagentsCount: (n: number) => `${n} subagent${n === 1 ? '' : 's'}`,
   permissionAsk: (what: string) => `▲ asks permission: ${what}`,
-  answerInDialog: 'answer it in Claude Code’s permission dialog',
+  answerInDialog: 'permission requested in Claude Code; background loops may not expose a dialog',
   noActivity: 'no activity yet',
   noneInFilter: 'no subagents in this filter',
   transcriptUnavailable: 'transcript not readable; showing what the hooks recorded',

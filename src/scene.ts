@@ -120,7 +120,7 @@ export const agentLabel = (a: AgentRec, now: number, rows: number, pack: Pack = 
   const [w, color] = word(pack, a, now)
   const stage = a.plan.length > 0 ? ` ${a.done}/${a.plan.length}` : ''
   const lines: Label['lines'] = [{ text: fit(shownName(a), CARD_W), color: costumeColor(pack, a.costume), bold: true }]
-  if (rows >= 2) lines.push({ text: fit(`${w}${stage}`, CARD_W), color })
+  if (rows >= 2) lines.push({ text: fit(`${a.ext ? `${a.ext.cli} · ` : ''}${w}${stage}`, CARD_W), color })
   if (rows >= 3) {
     const b = a.plan.length > 0 ? `${bar(a.done, a.plan.length, 8)} ` : ''
     lines.push({ text: fit(`${b}${ago(now - a.lastEventAt)}`, CARD_W), dim: true })
@@ -234,7 +234,7 @@ export const rowLines = (s: BusState, a: AgentRec, now: number, width: number, p
   const fitW = (t: string) => fit(t, Math.max(8, width))
   const out: Row[] = []
   const stage = a.plan.length > 0 ? `  ${bar(a.done, a.plan.length, Math.min(10, Math.max(4, width - 22)))} ${a.done}/${a.plan.length}` : ''
-  out.push({ text: fitW(`${w}${stage}`), color })
+  out.push({ text: fitW(`${a.ext ? `${a.ext.cli} · ` : ''}${w}${stage}`), color })
   const doing = a.current ?? (a.lastTool ? `${a.lastTool}${a.lastToolInput ? ` ${a.lastToolInput}` : ''}` : TEXT.noActivityYet)
   out.push({ text: fitW(doing), dim: true })
   const msgs = s.msgs.filter(m => m.to === a.id && m.accepted)

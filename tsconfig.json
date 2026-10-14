@@ -8,5 +8,9 @@
     "./types",
     "./src",
     "./tests"
+  ],
+  "exclude": [
+    ".crabbus",
+    "node_modules"
   ]
 }
