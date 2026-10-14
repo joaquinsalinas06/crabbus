@@ -46,6 +46,7 @@ function collectFiles(targetPath: string, out: string[] = []): string[] {
     return out
   }
   for (const ent of readdirSync(targetPath, { withFileTypes: true })) {
+    // Hidden directories include nested .crabbus worktrees; never scan repository copies.
     if (ent.name.startsWith('.')) continue
     const full = join(targetPath, ent.name)
     if (ent.isDirectory()) collectFiles(full, out)
