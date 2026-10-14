@@ -4,10 +4,11 @@
 // tool's call, never changes a message, and any failure of its own falls through to `next(e)`.
 // It also adds one thing the model reads: BRIEF, appended to each spawned subagent's prompt (see README).
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, FsEntry, Register, RenderChildren } from 'claude-code'
+import type { EngineInterface, FsEntry, Register, RenderChildren, RenderElement, RenderInput, RenderNode } from 'claude-code'
 
 import { CARD_H, CARD_W, canvas, cellsOf, drawAgent } from '../src/art.ts'
-import { textRows } from '../src/canvas.ts'
+import type { Canvas } from '../src/canvas.ts'
+import { barSvg, sparkSvg, toSvg } from '../src/svg.ts'
 import { BUILTIN } from '../src/builtin.ts'
 import { MASTER, direct, emptyDirector, playOf, type Director } from '../src/director.ts'
 import { loadPack } from '../src/fit.ts'
@@ -65,12 +66,15 @@ Progress reporting (CrabBus): call mcp__crabbus__bus_step first with plan (3-8 s
 // Animation state lives in the module: it is redrawn from scratch after a reload, nothing to keep.
 let clock: { cancel: () => void } | undefined
 let frame = 0
-let band: { site: string; columns: number; maxRows: number } | undefined
-// the pane's site while it is drawn, and the crabs it shows (key -> agent id, '' = the master; mini = half size)
-let paneSite: string | undefined
-let paneCrabs: { key: string; id: string; i: number; mini: boolean; bg?: number; costume?: { id: string; isMaster: boolean; active: boolean } }[] = []
-// which view the pane shows: the list's text crabs move with each redraw, so it redraws more often
-let paneView: 'list' | 'detail' | 'wardrobe' = 'list'
+type DrawSurface = 'terminal' | 'desktop'
+type PaneCrab = { key: string; id: string; i: number; mini: boolean; bg?: number; costume?: { id: string; isMaster: boolean; active: boolean } }
+const bands = new Map<DrawSurface, { site: string; columns: number; maxRows: number }>()
+const panes = new Map<DrawSurface, { site: string; crabs: PaneCrab[]; view: 'list' | 'detail' | 'wardrobe' }>()
+let lastDesktopRefresh = 0
+let lastDesignCheck = 0
+const clientFaults = new Set<string>()
+const lastPaneTrees = new Map<DrawSurface, RenderElement>()
+const clientKey = (component: string, site: string, key: string) => `${component}:${site}:${key}`
 // set once per session: the pane opens by itself only the first time an agent starts
 let autoOpened = false
 // the designs in use: the built-in crew plus the user's files that passed the fit check
@@ -100,6 +104,69 @@ const playing = (id: string) => playOf(dir, id, frame)
 
 const input = (e: unknown): Record<string, unknown> => (typeof e === 'object' && e !== null ? (e as Record<string, unknown>) : {})
 const hex = (n: number): string => `#${n.toString(16).padStart(6, '0')}`
+
+/** Raster uses cells; Desktop Client requests the same engine frames without rebuilding the panel. */
+function renderCanvas($: EngineInterface, e: RenderInput, c: Canvas, key: string, alt: string, bg?: number, ms?: number): RenderElement {
+  if (e.surface === 'terminal') {
+    const { Raster } = $.ui.resolve(e)
+    const cells = cellsOf(c, bg)
+    return <Raster key={key} {...cells} />
+  }
+  const { Text } = $.ui.resolve(e)
+  if (e.surface === 'desktop') {
+    const { Svg, Client } = $.ui.resolve(e)
+    const source = toSvg(c, bg)
+    if (source.length <= 131072) {
+      const props = { source, alt, width: c.width * 4, height: c.height * 4, ms }
+      if (typeof Client === 'function' && ms !== undefined && !clientFaults.has(clientKey(e.component, e.requestId, key)) && JSON.stringify(props).length <= 100000) {
+        try {
+          const drawing = <Client key={key} module="./crab-client.js" props={props} width={c.width / 2} height={Math.ceil(c.height / 4)} />
+          if (drawing.type === 'Client') return drawing
+          clientFaults.add(clientKey(e.component, e.requestId, key))
+        } catch {
+          clientFaults.add(clientKey(e.component, e.requestId, key))
+        }
+      }
+      return <Svg source={source} alt={alt} width={c.width * 4} height={c.height * 4} />
+    }
+  }
+  return <Text key={key}>{alt}</Text>
+}
+
+/** shortcut: keep Desktop trees conservative until the app's aggregate SVG limit is verified. */
+function desktopDrawing(tree: RenderElement): RenderElement {
+  if (JSON.stringify(tree).length <= 100000) return tree
+  // Drop pictures, preserving the controls and their registered handlers.
+  const withoutSvg = (node: RenderNode): RenderNode => {
+    if (typeof node === 'string') return node
+    if (node.type === 'Client') {
+      const props = input(node.props.props)
+      if (props['alt'] === 'Master crab') return { type: 'Svg', props: { source: String(props['source']), alt: 'Master crab', width: Number(props['width']), height: Number(props['height']) } }
+      return { type: 'Text', props: {}, children: [String(props['alt'] ?? 'CrabBus crab')] }
+    }
+    if (node.type === 'Svg' && node.props.alt === 'Master crab') return node
+    if (node.type === 'Svg') return { type: 'Text', props: {}, children: [node.props.alt] }
+    if ('children' in node && node.children) return { ...node, children: node.children.map(withoutSvg) } as RenderElement
+    return node
+  }
+  return withoutSvg(tree) as RenderElement
+}
+
+/** A failed render cannot reuse callback addresses from an earlier render scope. */
+function panelSnapshot(tree: RenderElement): RenderElement {
+  const snapshot = (node: RenderNode): RenderNode => {
+    if (typeof node === 'string') return node
+    if (node.type === 'Client') {
+      const p = input(node.props.props)
+      return { type: 'Svg', props: { source: String(p['source']), alt: String(p['alt']), width: Number(p['width']), height: Number(p['height']) } }
+    }
+    if (node.type === 'Button') return { type: 'Box', props: { flexDirection: 'row' }, children: node.children?.map(snapshot) }
+    if (node.type === 'Input' || node.type === 'Select') return { type: 'Text', props: { dimColor: true }, children: ['Controls resume after the next successful refresh.'] }
+    if ('children' in node && node.children) return { ...node, children: node.children.map(snapshot) } as RenderElement
+    return node
+  }
+  return snapshot(tree) as RenderElement
+}
 
 // ---- top-level helpers: the only functions that receive `$`
 
@@ -357,20 +424,46 @@ async function runCostumeCommand($: EngineInterface, argsStr: string, frameMs: n
   return { text: designSummary(dir) }
 }
 
+/** One mounted crab's current art frame, shared by terminal blit and Desktop messages. */
+function paneCanvas(s: BusState, t: number, crab: PaneCrab, still: boolean): Canvas | undefined {
+  if (crab.costume) {
+    const k = crab.costume
+    return pack.costumes[k.id] ? previewCanvas(k.id, previewMood(k.isMaster, k.active, still ? 1 : phase(frame, crab.i))) : undefined
+  }
+  const a = crab.id === '' ? undefined : s.agents[crab.id]
+  if (crab.id !== '' && !a) return undefined
+  const tick = still ? 1 : phase(frame, crab.i)
+  return a
+    ? (crab.mini ? miniCard : agentCard)(s, a, t, tick, still, pack, still ? undefined : playing(a.id))
+    : (crab.mini ? masterMini : masterCard)(s, t, tick, pack, still ? undefined : playing(MASTER))
+}
+
 /** One animation frame: repaint the stage and the pane's crabs in place; a size change asks for a redraw. */
 async function paint($: EngineInterface, still: boolean): Promise<void> {
   frame = (frame + 1) % 100000
-  // a design saved while the crabs are on screen shows up within about two seconds
-  if (frame % 12 === 0) void refreshDesigns($).catch(() => undefined)
   const [s, t] = [await read($, bus), await $.clock.now()]
-  if (!isActive(s, t) && !paneSite) {
+  // Time-based polling also keeps the two-second reload at low fps and reduced motion.
+  if (t - lastDesignCheck >= 2000) {
+    lastDesignCheck = t
+    void refreshDesigns($).catch(() => undefined)
+  }
+  if (!isActive(s, t) && panes.size === 0 && !bands.has('desktop')) {
     clock?.cancel()
     clock = undefined
     $.ui.invalidate('ui.render')
     return
   }
   // reduced motion: no plays, the crabs only show their state
-  if (!still) dir = direct(dir, s, pack, t, frame)
+  const band = bands.get('terminal')
+  const pane = panes.get('terminal')
+  if (!still && (bands.size > 0 || panes.size > 0)) dir = direct(dir, s, pack, t, frame)
+  const desktopPane = panes.get('desktop')
+  // Wardrobe frames arrive through Client; it has no age labels requiring clock redraws.
+  const desktopRefreshMs = desktopPane?.view === 'detail' || still ? 1000 : 5000
+  if ((bands.has('desktop') || (desktopPane && desktopPane.view !== 'wardrobe')) && t - lastDesktopRefresh >= desktopRefreshMs) {
+    lastDesktopRefresh = t
+    $.ui.invalidate('ui.render')
+  }
   if (band) {
     const l = layout(s, t, band.columns, band.maxRows)
     if (l.kind === 'stage') {
@@ -381,23 +474,12 @@ async function paint($: EngineInterface, still: boolean): Promise<void> {
     // the "Ns ago" labels and the cast change slowly: a full redraw once a second is enough
     if (frame % 6 === 0) $.ui.invalidate('ui.render')
   }
-  if (paneSite) {
-    const site = paneSite
-    for (const crab of paneCrabs) {
-      if (crab.costume) {
-        const k = crab.costume
-        if (pack.costumes[k.id]) await $.ui.blit({ requestId: site, key: crab.key, cells: cellsOf(previewCanvas(k.id, previewMood(k.isMaster, k.active, still ? 1 : phase(frame, crab.i))), crab.bg).cells })
-        continue
-      }
-      const a = crab.id === '' ? undefined : s.agents[crab.id]
-      if (crab.id !== '' && !a) continue
-      const tick = still ? 1 : phase(frame, crab.i)
-      const c = a
-        ? (crab.mini ? miniCard : agentCard)(s, a, t, tick, still, pack, playing(a.id))
-        : (crab.mini ? masterMini : masterCard)(s, t, tick, pack, playing(MASTER))
-      await $.ui.blit({ requestId: site, key: crab.key, cells: cellsOf(c, crab.bg).cells })
+  if (pane) {
+    for (const crab of pane.crabs) {
+      const c = paneCanvas(s, t, crab, still)
+      if (c) await $.ui.blit({ requestId: pane.site, key: crab.key, cells: cellsOf(c, crab.bg).cells })
     }
-    if (frame % (paneView !== 'detail' && !still ? 3 : 6) === 0) $.ui.invalidate('ui.render')
+    if (frame % (pane.view !== 'detail' && !still ? 3 : 6) === 0) $.ui.invalidate('ui.render')
   }
 }
 
@@ -501,8 +583,7 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'disfraz' }, ($, e) => runCostumeCommand($, e.args, frameMs, still))
 
   on('ui.close', { id: PANE }, ($, e, next) => {
-    paneSite = undefined
-    paneCrabs = []
+    panes.clear()
     return next(e)
   })
 
@@ -541,7 +622,7 @@ export const register: Register = (on, options) => {
       const args = input(e)
       await record($, (s, t) => onMasterTool(s, e.tool, args, true, t)).catch(() => undefined)
       // the master working is reason enough to animate the panel's crab
-      if (paneSite) ensureClock($, frameMs, still)
+      if (panes.size > 0) ensureClock($, frameMs, still)
       const ran = await next(e)
       await record($, (s, t) => onMasterTool(s, e.tool, args, false, t)).catch(() => undefined)
       return ran
@@ -677,20 +758,66 @@ export const register: Register = (on, options) => {
     return r
   }).catch(($, e, next) => next(e))
 
-  // ---- drawing (terminal only)
+  on('ui.message', async ($, e) => {
+    if (e.surface !== 'desktop' || !e.module.endsWith('/crab-client.js') || input(e.data)['kind'] !== 'frame' || clientFaults.has(clientKey(e.component, e.requestId, e.element))) return {}
+    const pane = panes.get('desktop')
+    const band = bands.get('desktop')
+    const crab = e.component === 'Pane' && pane?.site === e.requestId ? pane.crabs.find(c => c.key === e.element) : undefined
+    const stage = e.component === 'AbovePrompt' && e.element === STAGE_KEY && band?.site === e.requestId ? band : undefined
+    if (!crab && !stage) return {}
+    const [s, t] = [await read($, bus), await $.clock.now()]
+    let c: Canvas | undefined
+    if (crab) c = paneCanvas(s, t, crab, still)
+    else if (stage) {
+      const l = layout(s, t, stage.columns, stage.maxRows)
+      if (l.kind === 'stage') c = compose(s, l, t, frame, still, pack, still ? undefined : playing)
+      else if (l.kind === 'none') c = masterCard(s, t, still ? 1 : frame, pack, still ? undefined : playing(MASTER))
+    }
+    if (!c) return {}
+    const source = toSvg(c, crab?.bg)
+    const alt = crab?.costume ? `Costume: ${pack.costumes[crab.costume.id]?.name ?? crab.costume.id}`
+      : crab ? crab.id === '' ? 'Master crab' : `Crab: ${s.agents[crab.id]?.description ?? crab.id}` : 'CrabBus crew'
+    const props = { source, alt, width: c.width * 4, height: c.height * 4, ms: frameMs }
+    return source.length <= 131072 && JSON.stringify(props).length <= 100000 ? { props } : {}
+  }).catch(() => ({}))
+
+  on('ui.fault', ($, e) => {
+    if (e.surface === 'desktop') {
+      clientFaults.add(clientKey(e.component, e.requestId, e.element))
+      $.ui.log(`CrabBus Client ${e.element} failed (${e.phase}): ${e.reason}`, { to: 'debug' })
+      $.ui.invalidate('ui.render')
+    }
+    return {}
+  })
+
+  // ---- shared UI, with surface-specific pixel transport
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey || e.surface !== 'terminal' || bandMode === 'off') return next(e)
+    if (e.surface !== 'terminal' && e.surface !== 'desktop') return next(e)
+    bands.delete(e.surface)
+    if (e.props.hasSurvey || bandMode === 'off') return next(e)
+    const frozen = still || (e.surface === 'desktop' && clientFaults.has(clientKey(e.component, e.requestId, STAGE_KEY)))
     const [s, t] = [await read($, bus), await $.clock.now()]
     const full = layout(s, t, e.props.bodyColumns, e.props.maxRows)
+    // Desktop keeps the master visible even before the first subagent and after the crew leaves.
+    if (e.surface === 'desktop' && full.kind === 'none' && !panes.has('desktop')) {
+      bands.set('desktop', { site: e.requestId, columns: e.props.bodyColumns, maxRows: e.props.maxRows })
+      ensureClock($, frameMs, still)
+      const { Box, Text } = $.ui.resolve(e)
+      const below = await next(e)
+      return <Box flexDirection="column"><Box flexDirection="row" alignItems="center" gap={1}>
+        {renderCanvas($, e, masterCard(s, t, frozen ? 1 : frame, pack), STAGE_KEY, 'Master crab', undefined, still ? undefined : frameMs)}
+        <Text>Master</Text>
+      </Box>{below}</Box>
+    }
     // the side pane is the main view: while it is drawn the band stays out of the way
-    const l = full.kind === 'none' || paneSite !== undefined ? { kind: 'none' as const } : bandMode === 'auto' ? { kind: 'line' as const } : full
+    const l = full.kind === 'none' || panes.has(e.surface) ? { kind: 'none' as const } : bandMode === 'auto' ? { kind: 'line' as const } : full
     if (l.kind === 'none') {
-      band = undefined
       return next(e)
     }
-    band = { site: e.requestId, columns: e.props.bodyColumns, maxRows: e.props.maxRows }
-    const { Box, Text, Raster } = $.ui.resolve(e)
+    bands.set(e.surface, { site: e.requestId, columns: e.props.bodyColumns, maxRows: e.props.maxRows })
+    ensureClock($, frameMs, still)
+    const { Box, Text } = $.ui.resolve(e)
     const below = await next(e)
     const labelBox = (lab: Label, key: string) => (
       <Box key={key} flexDirection="column" width={CARD_W} flexShrink={0}>
@@ -717,11 +844,11 @@ export const register: Register = (on, options) => {
         </Box>
       )
     }
-    const c = cellsOf(compose(s, l, t, frame, still, pack, playing))
-    return (
+    const c = compose(s, l, t, frozen ? 1 : frame, frozen, pack, frozen ? undefined : playing)
+    const tree = (
       <Box flexDirection="column">
         <Box flexDirection="column" alignItems="flex-end">
-          <Raster key={STAGE_KEY} columns={c.columns} rows={c.rows} cells={c.cells} />
+          {renderCanvas($, e, c, STAGE_KEY, 'CrabBus crew', undefined, still ? undefined : frameMs)}
           <Box flexDirection="row" gap={1}>
             {l.agents.map(a => labelBox(agentLabel(a, t, l.labelRows, pack), `l-${a.id}`))}
             {labelBox(masterLabel(s, l, t, l.labelRows), 'l-master')}
@@ -730,6 +857,7 @@ export const register: Register = (on, options) => {
         {below}
       </Box>
     )
+    return e.surface === 'desktop' ? desktopDrawing(tree) : tree
   }).catch(($, e, next) => next(e))
 
   // The side panel (the v3 design): a list of the master and its subagents with metrics, delegation,
@@ -741,52 +869,48 @@ export const register: Register = (on, options) => {
       await read($, openSecs), await read($, filterAtom), await read($, modeAtom), await read($, tabAtom),
       await read($, viewAtom),
     ]
-    if (e.surface !== 'terminal') {
+    if (e.surface !== 'terminal' && e.surface !== 'desktop') {
       const { Text: Plain } = $.ui.resolve(e)
       return <Plain>{statusReport(s, t)}</Plain>
     }
-    const { Box, Text, Raster, Button, Input } = $.ui.resolve(e)
-    paneSite = e.requestId
+    const { Box, Text, Button, Input } = $.ui.resolve(e)
+    const desktop = e.surface === 'desktop'
+    const frozen = still
     // after a reload nothing has started the animation clock yet: the open panel starts it
     ensureClock($, frameMs, still)
     const open = { ...OPEN0, ...(open0 ?? {}) }
     const W = Math.max(30, e.props.bodyColumns)
-    const crabs: typeof paneCrabs = []
-    const crabCanvas = (id: string, i: number, mini: boolean) => {
-      const a = id === '' ? undefined : s.agents[id]
-      const tick = still ? 1 : phase(frame, i)
-      return a
-        ? (mini ? miniCard : agentCard)(s, a, t, tick, still, pack, playing(a.id))
-        : (mini ? masterMini : masterCard)(s, t, tick, pack, playing(MASTER))
-    }
-    // an animated crab repainted in place (blit) between redraws; `bg` fills its transparent cells
+    const crabs: PaneCrab[] = []
+    let paneView: 'list' | 'detail' | 'wardrobe' = 'list'
+    panes.set(e.surface, { site: e.requestId, crabs, view: paneView })
+    // Terminal crabs blit between redraws; Desktop Clients request the same frames.
     const crab = (key: string, id: string, i: number, mini = false, bg?: number) => {
       crabs.push({ key, id, i, mini, ...(bg !== undefined ? { bg } : {}) })
-      const c = cellsOf(crabCanvas(id, i, mini), bg)
-      return <Raster key={key} columns={c.columns} rows={c.rows} cells={c.cells} />
+      const poseStill = still || (desktop && clientFaults.has(clientKey(e.component, e.requestId, key)))
+      return renderCanvas($, e, paneCanvas(s, t, { key, id, i, mini }, poseStill) ?? canvas(CARD_W, CARD_H), key, id === '' ? 'Master crab' : `Crab: ${s.agents[id]?.description ?? id}`, bg, still ? undefined : frameMs)
     }
-    // a crab drawn as colored text, one Button per row: pressing any part of it opens the agent.
-    // It moves on each redraw of the list (twice a second), as the design's crabs step.
-    const crabButtons = (key: string, id: string, i: number, mini: boolean, bg: number, onPress?: () => void) => (
-      <Box key={key} flexDirection="column" flexShrink={0}>
-        {textRows(crabCanvas(id, i, mini), bg).map((row, r) => {
-          const runs = row.map((run, k) => <Text key={`${key}-${r}-${k}`} color={hex(run.fg)} backgroundColor={hex(run.bg)}>{run.t}</Text>)
-          return onPress ? <Button key={`${key}-${r}`} plain onPress={onPress}>{runs}</Button> : <Text key={`${key}-${r}`}>{runs}</Text>
-        })}
-      </Box>
-    )
     // a new view starts at its top: the body's window would otherwise stay where the last one was
     const toTop = () => void $.ui.scroll({ in: PANE, to: 'start' }).catch(() => undefined)
     const select = (id: string | null) => () => void update($, selected, () => id).then(toTop)
     const toggle = (k: string) => () => void update($, openSecs, o => ({ ...OPEN0, ...(o ?? {}), [k]: !({ ...OPEN0, ...(o ?? {}) })[k] }))
     const ch = (k: string) => (open[k] ? '▾' : '▸')
-    // a section's header: the fold arrow and caps label on the left, a summary on the right
+    const heading = (label: string) => desktop ? label.charAt(0) + label.slice(1).toLowerCase() : label
+    const graphic = (source: string, alt: string, width: number, height: number) => {
+      if (e.surface !== 'desktop') return null
+      const { Svg } = $.ui.resolve(e)
+      return <Svg source={source} alt={alt} width={width} height={height} />
+    }
+    const progress = (pct: number | undefined, color: number, alt: string, width = 140) =>
+      graphic(barSvg(pct, color, C.track, width), `${alt}: ${pct === undefined ? 'unknown' : `${pct}%`}`, width, 6)
+    const history = (values: readonly number[], color: number, alt: string, width = 100) =>
+      graphic(sparkSvg(values, color, width), alt, width, 24)
+    // Fold controls and summaries share callbacks; Desktop uses the native button treatment.
     const section = (k: string, label: string, right: string, rightColor: number = C.dim, mark?: [string, number]) => (
-      <Box key={`h-${k}`} flexDirection="row" width="100%">
+      <Box key={`h-${k}`} flexDirection="row" width="100%" alignItems="center" gap={desktop ? 1 : 0} marginY={desktop ? 1 : 0}>
         <Button key={`sec-${k}`} plain onPress={toggle(k)}>
           <Text color={hex(C.dim)}>{ch(k)} </Text>
           {mark ? <Text color={hex(mark[1])}>{mark[0]} </Text> : ''}
-          <Text color={hex(C.faint)}>{label}</Text>
+          <Text bold={desktop} color={hex(desktop ? C.text : C.faint)}>{heading(label)}</Text>
         </Button>
         <Box flexGrow={1} />
         <Text wrap="truncate-end" color={hex(rightColor)}>{right}</Text>
@@ -796,19 +920,32 @@ export const register: Register = (on, options) => {
     const viewTabs = (current: 'agents' | 'wardrobe') => (
       <Box key="view-tabs" flexDirection="row" gap={1}>
         {(['agents', 'wardrobe'] as const).map(v => (
-          <Button key={`view-${v}`} plain hotkey={v === 'agents' ? 'a' : 'w'} onPress={() => void update($, viewAtom, () => v).then(toTop)}>
+          <Button key={`view-${v}`} plain={desktop ? undefined : true} hotkey={v === 'agents' ? 'a' : 'w'} onPress={() => void update($, viewAtom, () => v).then(toTop)}>
             <Text bold={v === current} color={hex(v === current ? C.text : C.dim)} {...(v === current ? { backgroundColor: hex(C.chip) } : {})}>{` ${v === 'agents' ? TEXT.tabAgents : TEXT.tabWardrobe} `}</Text>
           </Button>
         ))}
       </Box>
     )
     // the state chip never wraps: in a narrow panel it keeps only its glyph
-    const compact = W < 50
+    const compact = !desktop && W < 50
     const chip = (st: UiStatus, short = compact) => (
-      <Box flexShrink={0}><Text color={hex(ST[st].c)} backgroundColor={hex(ST[st].bg)}>{short ? ` ${ST[st].g} ` : ` ${ST[st].g} ${ST[st].l} `}</Text></Box>
+      <Box flexShrink={0}><Text color={hex(ST[st].c)} backgroundColor={hex(ST[st].bg)}>{short && !desktop ? ` ${ST[st].g} ` : ` ${ST[st].g} ${ST[st].l} `}</Text></Box>
     )
-    const rule = (key: string, w = W) => <Text key={key} color={hex(C.line)}>{'─'.repeat(Math.max(1, w))}</Text>
+    const rule = (key: string, w = W) => desktop
+      ? <Box key={key} width="100%" height={0} borderStyle="single" borderColor={hex(C.line)} marginY={1} />
+      : <Text key={key} color={hex(C.line)}>{'─'.repeat(Math.max(1, w))}</Text>
     const ctxLine = (key: string, pct: number | undefined, color: number, w: number, tail: string, tailCost: string) => {
+      if (desktop) return (
+        <Box key={key} flexDirection="column" gap={1}>
+          <Box flexDirection="row" gap={1} flexWrap="wrap" alignItems="center">
+            <Text color={hex(C.dim)}>Context</Text>
+            <Text color={hex(color)}>{pct !== undefined ? `${pct}%` : '–'}</Text>
+            {tail && <Text color={hex(C.dim)}>{tail}</Text>}
+            {tailCost && <Text color={hex(C.peach)}>{tailCost}</Text>}
+          </Box>
+          {progress(pct, color, 'Context')}
+        </Box>
+      )
       const bw = Math.max(4, w - 10 - tail.length - tailCost.length - 2)
       const [fill, rest] = meter(pct ?? 0, bw)
       return (
@@ -840,7 +977,7 @@ export const register: Register = (on, options) => {
       // full-size crabs, two rows to a page, as many to a row as fit between the side arrows
       const tileW = CARD_W + 2
       // room for the two chevrons (2 columns each) and a column between each and the cards
-      const perRow = Math.max(1, Math.floor((W - 6 + 1) / (tileW + 1)))
+      const perRow = desktop ? 2 : Math.max(1, Math.floor((W - 6 + 1) / (tileW + 1)))
       const size = perRow * 2
       const pages = Math.max(1, Math.ceil(m.rotation.length / size))
       const page = Math.min(Math.max(0, (await read($, wdPage)) ?? 0), pages - 1)
@@ -854,37 +991,40 @@ export const register: Register = (on, options) => {
       }
       // a card is 7 rows of crab, its name and its state, inside its border
       const tileH = CARD_H / 2 + 2 + 2
-      const rowsShown = Math.max(1, Math.ceil(shown.length / perRow))
+      const rowsShown = desktop ? 2 : Math.max(1, Math.ceil(shown.length / perRow))
       const gridH = rowsShown * tileH + (rowsShown - 1)
-      // one card: the crab is a Raster repainted in place by the clock (a Button would invert under the pointer and turn
-      // its half-block rows upside down); its name and state are the press targets, 1-9 too, and the card lights under the pointer
+      // The sprite sits beside the name/state buttons: terminal half blocks must not invert on hover.
       const tile = (c: WardrobeCostumeView, i: number, j: number) => {
         const here = chosen?.id === c.id
         const bg = here ? CARD_HOT : CARD_BG
-        const key = `wd-tile-${c.id}`
+        const key = desktop ? `wd-slot-${j}` : `wd-tile-${c.id}`
         crabs.push({ key, id: '', i, mini: false, bg, costume: { id: c.id, isMaster: c.isMaster, active: c.active } })
-        const cells = cellsOf(previewCanvas(c.id, previewMood(c.isMaster, c.active, still ? 1 : phase(frame, i))), bg)
+        const pixels = previewCanvas(c.id, previewMood(c.isMaster, c.active, frozen || (desktop && clientFaults.has(clientKey(e.component, e.requestId, key))) ? 1 : phase(frame, i)))
         const state = c.active ? TEXT.tileOn : TEXT.tileOff
         const worn = c.wornBy > 0 ? TEXT.worn(c.wornBy) : ''
         const digit = j < 9 ? String(j + 1) : undefined
         return (
           <Box
-            key={`wd-cell-${c.id}`}
+            key={desktop ? `wd-cell-slot-${j}` : `wd-cell-${c.id}`}
             flexDirection="column"
-            width={tileW}
-            flexShrink={0}
+            width={desktop ? '48%' : tileW}
+            flexGrow={desktop ? 1 : 0}
+            flexShrink={desktop ? 1 : 0}
+            {...(desktop ? { minWidth: 0, padding: 1, height: 10, minHeight: 10 } : {})}
             borderStyle={here ? 'bold' : 'round'}
             borderColor={hex(here ? C.text : c.active ? c.color : C.line2)}
             backgroundColor={hex(bg)}
             hover={{ borderColor: hex(C.mint) }}
           >
-            <Raster key={key} columns={cells.columns} rows={cells.rows} cells={cells.cells} />
+            {desktop ? <Box key={`wd-art-${j}`} height={4} minHeight={4} flexShrink={0}>
+              {renderCanvas($, e, pixels, key, `Costume: ${c.name}`, bg, still ? undefined : frameMs)}
+            </Box> : renderCanvas($, e, pixels, key, `Costume: ${c.name}`, bg, still ? undefined : frameMs)}
             <Button key={`wd-pick-${c.id}`} plain {...(digit ? { hotkey: digit } : {})} onPress={pick(c.id)}>
               <Text color={hex(C.yellow)}>{c.isMaster ? '★ ' : ''}</Text>
-              <Text bold={here} color={hex(c.active || here ? C.text : C.faint)}>{c.id}</Text>
+              <Text wrap="truncate-end" bold={here} color={hex(c.active || here ? C.text : C.faint)}>{c.id}</Text>
             </Button>
             <Button key={`wd-pick-${c.id}-st`} plain onPress={pick(c.id)}>
-              <Text color={hex(c.active ? C.mint : C.faint)}>{state.padEnd(Math.max(state.length, CARD_W - worn.length))}</Text>
+              <Text wrap="truncate-end" color={hex(c.active ? C.mint : C.faint)}>{desktop ? `${state}${worn ? ' · ' : ''}` : state.padEnd(Math.max(state.length, CARD_W - worn.length))}</Text>
               <Text color={hex(C.peach)}>{worn}</Text>
             </Button>
           </Box>
@@ -892,7 +1032,11 @@ export const register: Register = (on, options) => {
       }
       // each row starts at the left edge of the same 2-column box: centered one by one, a row whose blanks the
       // terminal trims would shift
-      const arrow = (key: string, rows: readonly string[], k: number) => (
+      const arrow = (key: string, rows: readonly string[], k: number) => desktop ? (
+        <Box key={key} flexShrink={0}>
+          {pages > 1 && <Button key={`${key}-1`} onPress={goPage(page + k)}>{k < 0 ? 'Previous' : 'Next'}</Button>}
+        </Box>
+      ) : (
         <Box key={key} flexDirection="column" justifyContent="center" alignItems="flex-start" width={2} height={gridH} flexShrink={0}>
           {pages > 1 && rows.map((row, r) => (
             <Button key={`${key}-${r}`} plain onPress={goPage(page + k)}><Text bold color={hex(C.mint)}>{row}</Text></Button>
@@ -900,12 +1044,12 @@ export const register: Register = (on, options) => {
         </Box>
       )
       const pill = (key: string, lit: boolean, label: string, color: number, onPress: () => void) => (
-        <Button key={key} plain onPress={onPress}>
+        <Button key={key} plain={desktop ? undefined : true} onPress={onPress}>
           <Text bold={lit} color={hex(lit ? color : C.dim)} backgroundColor={hex(lit ? C.chip : CARD_BG)}>{label}</Text>
         </Button>
       )
       const ctl = (key: string, label: string, color: number, onPress: () => void) => (
-        <Button key={key} plain onPress={onPress}><Text color={hex(color)}>{label}</Text></Button>
+        <Button key={key} plain={desktop ? undefined : true} onPress={onPress}><Text color={hex(color)}>{label}</Text></Button>
       )
       const help = (key: string, txt: string) => <Text key={key} wrap="wrap" color={hex(C.faint)}>{txt}</Text>
       // a rule's conditions as colored tags (title, prompt, date...) followed by what each asks
@@ -982,7 +1126,7 @@ export const register: Register = (on, options) => {
       }
       const tellStatus = (key: string) =>
         told && told.done === undefined && t - told.at < TOLD_WAIT_MS ? (
-          <Text key={key} wrap="wrap" color={hex(C.lav)}>{`${'·✢✳✶✻✽'[Math.floor(frame / 3) % 6] ?? '·'} ${TEXT.tellWorking}`}</Text>
+          <Text key={key} wrap="wrap" color={hex(C.lav)}>{`${'·✢✳✶✻✽'[frozen ? 0 : Math.floor(frame / 3) % 6] ?? '·'} ${TEXT.tellWorking}`}</Text>
         ) : told?.done !== undefined && t - told.done < FRESH_MS ? (
           <Text key={key} wrap="wrap" color={hex(C.mint)}>{TEXT.tellDone}</Text>
         ) : null
@@ -1002,17 +1146,31 @@ export const register: Register = (on, options) => {
           {section('wdGrid', TEXT.secCostumes, TEXT.wardrobeLegend)}
           {open['wdGrid'] !== false && (
             <Box flexDirection="column" alignItems="center" width="100%">
-              <Box flexDirection="row" alignItems="center" justifyContent="center" columnGap={1} width="100%">
+              {desktop ? <Box key="wd-grid" flexDirection="column" gap={1} width="100%">
+                {Array.from({ length: rowsShown }, (_, row) => (
+                  <Box key={`wd-row-${row}`} flexDirection="row" gap={1} width="100%" height={10} minHeight={10} flexShrink={0}>
+                    {[0, 1].map(k => {
+                      const j = row * 2 + k
+                      const c = shown[j]
+                      return c ? tile(c, page * size + j, j) : <Box key={`wd-cell-slot-${j}`} width="48%" flexGrow={1} flexShrink={1} minWidth={0} height={10} minHeight={10} />
+                    })}
+                  </Box>
+                ))}
+                {pages > 1 && <Box flexDirection="row" justifyContent="space-between" width="100%">
+                  {arrow('wd-prev', CHEVRON.prev, -1)}
+                  {arrow('wd-next', CHEVRON.next, 1)}
+                </Box>}
+              </Box> : <Box flexDirection="row" alignItems="center" justifyContent="center" columnGap={1} width="100%">
                 {arrow('wd-prev', CHEVRON.prev, -1)}
                 <Box flexDirection="row" flexWrap="wrap" columnGap={1} rowGap={1} width={perRow * tileW + (perRow - 1)}>
                   {shown.map((c, j) => tile(c, page * size + j, j))}
                 </Box>
                 {arrow('wd-next', CHEVRON.next, 1)}
-              </Box>
+              </Box>}
               {pages > 1 && (
                 <Box flexDirection="row" justifyContent="center" gap={1}>
                   {Array.from({ length: pages }, (_, k) => (
-                    <Button key={`wd-page-${k}`} plain onPress={goPage(k)}>
+                    <Button key={`wd-page-${k}`} plain={desktop ? undefined : true} onPress={goPage(k)}>
                       <Text color={hex(k === page ? C.mint : C.faint)}>{k === page ? '●' : '○'}</Text>
                     </Button>
                   ))}
@@ -1124,10 +1282,10 @@ export const register: Register = (on, options) => {
       const source = read_ && read_.length > 0 ? read_ : fallbackLines(a, v.name)
       const lines = filterTab(source, tab ?? 'all').slice(-60)
       const active = v.st === 'working' || v.st === 'thinking'
-      const spin = '·✢✳✶✻✽'[Math.floor(frame / 6) % 6] as string
+      const spin = '·✢✳✶✻✽'[frozen ? 0 : Math.floor(frame / 6) % 6] as string
       const half = Math.floor(W / 2)
       const card = (k: string, label: string, mark: number, right: string, rightC: number, w: number | string, inner: () => RenderChildren) => (
-        <Box key={`d-${k}`} flexDirection="column" width={w} borderStyle="round" borderColor={hex(C.edgeHi)} backgroundColor={hex(CARD_BG)} paddingX={1}>
+        <Box key={`d-${k}`} flexDirection="column" width={desktop && typeof w === 'number' ? '50%' : w} borderStyle="round" borderColor={hex(C.edgeHi)} backgroundColor={hex(CARD_BG)} paddingX={desktop ? 1 : 1}>
           {section(k, label, right, rightC, ['■', mark])}
           {open[k] ? inner() : null}
         </Box>
@@ -1135,18 +1293,18 @@ export const register: Register = (on, options) => {
       body = (
         <Box flexDirection="column">
           <Box flexDirection="row" gap={1}>
-            <Button key="back" hotkey="b" plain onPress={select(null)}>←</Button>
+            <Button key="back" hotkey="b" plain={desktop ? undefined : true} onPress={select(null)}>←</Button>
             {crab(`p-${a.id}`, a.id, Math.max(0, v.idx - 1))}
             <Box flexDirection="column" flexGrow={1}>
-              <Text bold wrap="truncate-end" color={hex(v.color)}>{v.name}</Text>
-              <Text wrap="truncate-end" color={hex(C.dim)}>{`${v.role} · ${v.model}`}</Text>
+              <Text bold wrap={desktop ? 'wrap' : 'truncate-end'} color={hex(v.color)}>{v.name}</Text>
+              <Text wrap={desktop ? 'wrap' : 'truncate-end'} color={hex(C.dim)}>{`${v.role} · ${v.model}`}</Text>
               <Box flexDirection="row">{chip(v.st)}</Box>
-              <Text wrap="truncate-end" color={hex(C.text)}>{v.summary}</Text>
+              <Text wrap={desktop ? 'wrap' : 'truncate-end'} color={hex(C.text)}>{v.summary}</Text>
               {v.permission && <Text color={hex(C.pink)} wrap="truncate-end">{TEXT.answerInDialog}</Text>}
               <Box flexDirection="row" gap={1}>
-                <Button key="prev" hotkey="p" plain onPress={go(-1)}>‹</Button>
+                <Button key="prev" hotkey="p" plain={desktop ? undefined : true} onPress={go(-1)}>‹</Button>
                 <Text color={hex(C.dim)}>{d.pos}</Text>
-                <Button key="next" hotkey="n" plain onPress={go(1)}>›</Button>
+                <Button key="next" hotkey="n" plain={desktop ? undefined : true} onPress={go(1)}>›</Button>
               </Box>
             </Box>
           </Box>
@@ -1154,7 +1312,7 @@ export const register: Register = (on, options) => {
           <Box flexDirection="column" borderStyle="round" borderColor={hex(C.line2)} paddingX={1} marginTop={1}>
             <Box flexDirection="row" gap={1}>
               {TABS.map(x => (
-                <Button key={`tab-${x}`} plain onPress={() => void update($, tabAtom, () => x).then(() => $.ui.scroll({ to: { key: 'tab-all' }, in: PANE, block: 'start' }).catch(() => undefined))}>
+                <Button key={`tab-${x}`} plain={desktop ? undefined : true} onPress={() => void update($, tabAtom, () => x).then(() => $.ui.scroll({ to: { key: 'tab-all' }, in: PANE, block: 'start' }).catch(() => undefined))}>
                   <Text color={hex(x === tab ? C.text : C.dim)} {...(x === tab ? { backgroundColor: hex(C.chip) } : {})}>{` ${x} `}</Text>
                 </Button>
               ))}
@@ -1219,7 +1377,7 @@ export const register: Register = (on, options) => {
                       {d.cost.parts.map(p => (
                         <Box key={`cp-${p.l}`} flexDirection="column">
                           <Box flexDirection="row"><Text color={hex(C.dim)}>{p.l}</Text><Box flexGrow={1} /><Text>{p.v}</Text></Box>
-                          <Text color={hex(C.peach)}>{meter(p.pct, Math.max(4, half - 4))[0]}<Text color={hex(C.track)}>{meter(p.pct, Math.max(4, half - 4))[1]}</Text></Text>
+                          {desktop ? progress(p.pct, C.peach, p.l) : <Text color={hex(C.peach)}>{meter(p.pct, Math.max(4, half - 4))[0]}<Text color={hex(C.track)}>{meter(p.pct, Math.max(4, half - 4))[1]}</Text></Text>}
                         </Box>
                       ))}
                       <Text color={hex(C.faint)} wrap="truncate-end">{d.cost.rate}</Text>
@@ -1228,7 +1386,7 @@ export const register: Register = (on, options) => {
                   {card('dTok', 'TOKENS', C.cyan, `↑${d.tokens.inTxt}`, C.cyan, W - half, () => (
                     <Box flexDirection="column">
                       <Text><Text color={hex(C.pink)}>↓</Text> {d.tokens.out} out</Text>
-                      <Text color={hex(C.cyan)} wrap="truncate-end">{d.tokens.spark || '–'}</Text>
+                      {desktop ? history(a.usageHist ?? [], C.cyan, 'Agent token history') : <Text color={hex(C.cyan)} wrap="truncate-end">{d.tokens.spark || '–'}</Text>}
                       <Text color={hex(C.dim)} wrap="truncate-end">cache {d.tokens.cache} · <Text color={hex(C.mint)}>{d.tokens.hit}</Text></Text>
                     </Box>
                   ))}
@@ -1236,7 +1394,7 @@ export const register: Register = (on, options) => {
                 <Box flexDirection="row">
                   {card('dCtx', 'CONTEXT', C.mint, v.ctxPct !== undefined ? `${v.ctxPct}%` : '–', v.ctxC, half, () => (
                     <Box flexDirection="column">
-                      <Text>{d.ctx.cells.map((c, k) => <Text key={`cc-${k}`} color={hex(c)}>▮</Text>)}</Text>
+                      {desktop ? progress(v.ctxPct, v.ctxC, 'Agent context') : <Text>{d.ctx.cells.map((c, k) => <Text key={`cc-${k}`} color={hex(c)}>▮</Text>)}</Text>}
                       <Text color={hex(C.dim)} wrap="truncate-end">{d.ctx.used} · compact 80%</Text>
                     </Box>
                   ))}
@@ -1244,7 +1402,7 @@ export const register: Register = (on, options) => {
                     <Box flexDirection="column">
                       <Text color={hex(C.dim)}>start <Text color={hex(C.text)}>{d.timing.start}</Text></Text>
                       <Text color={hex(C.dim)}>last <Text color={hex(C.text)}>{d.timing.last}</Text></Text>
-                      <Text>{d.timing.cells.map((c, k) => <Text key={`tc-${k}`} color={hex(c)}>▮</Text>)}</Text>
+                      {!desktop && <Text>{d.timing.cells.map((c, k) => <Text key={`tc-${k}`} color={hex(c)}>▮</Text>)}</Text>}
                     </Box>
                   ))}
                 </Box>
@@ -1254,7 +1412,7 @@ export const register: Register = (on, options) => {
                     {d.tools.history.map((run, k) => (
                       <Box key={`th-${k}`} flexDirection="row" gap={1}>
                         <Text color={hex(run.c)}>{run.g}</Text>
-                        <Box width={9} flexShrink={0}><Text wrap="truncate-end">{run.n}</Text></Box>
+                        <Box width={desktop ? undefined : 9} flexShrink={0}><Text wrap="truncate-end">{run.n}</Text></Box>
                         <Box flexGrow={1}><Text wrap="truncate-end" color={hex(C.dim)}>{run.a}</Text></Box>
                         <Text color={hex(C.faint)}>{run.t}</Text>
                       </Box>
@@ -1283,7 +1441,7 @@ export const register: Register = (on, options) => {
           </Box>
           <Box flexDirection="row" gap={1} marginTop={1}>
             <Button key="tabkey" hotkey="t" plain onPress={() => void update($, tabAtom, x => TABS[(TABS.indexOf(x ?? 'all') + 1) % TABS.length] as TxTab)}>tab</Button>
-            <Text color={hex(C.faint)} wrap="truncate-end">{TEXT.detailHints}</Text>
+            {!desktop && <Text color={hex(C.faint)} wrap="truncate-end">{TEXT.detailHints}</Text>}
           </Box>
         </Box>
       )
@@ -1292,7 +1450,7 @@ export const register: Register = (on, options) => {
       paneView = 'list'
       const m = listModel(s, t, { filter: filter ?? 'all', showAll: all === true }, pack)
       // narrow panels: half-size crabs in the cards too
-      const miniCards = W < 46
+      const miniCards = !desktop && W < 46
       const spriteW = miniCards ? CARD_W / 2 : CARD_W
       const cardInner = W - 4
       const textW = Math.max(10, cardInner - spriteW - 1)
@@ -1314,7 +1472,7 @@ export const register: Register = (on, options) => {
       }
       const rowButton = (key: string, segs: readonly Seg[], w: number, onPress: () => void, hotkey?: string) => (
         <Button key={key} plain {...(hotkey ? { hotkey } : {})} onPress={onPress}>
-          {fitSegs(segs, hotkey ? w - hotkey.length - 2 : w).map(([t, c, b], k) => <Text key={`${key}-${k}`} color={hex(c)} bold={b === true}>{t}</Text>)}
+          {(desktop ? segs : fitSegs(segs, hotkey ? w - hotkey.length - 2 : w)).map(([t, c, b], k) => <Text key={`${key}-${k}`} wrap={desktop ? 'wrap' : 'truncate-end'} color={hex(c)} bold={b === true}>{t}</Text>)}
         </Button>
       )
       const ctxSegs = (pct: number | undefined, color: number, w: number, tail: string, cost: string): Seg[] => {
@@ -1323,8 +1481,8 @@ export const register: Register = (on, options) => {
         return [['ctx ', C.dim], [`${pct !== undefined ? `${pct}%` : '–'}`.padEnd(4) + ' ', color], [fill, color], [rest, C.track], ...(tail ? ([[`  ${tail}`, C.dim]] as Seg[]) : []), ...(cost ? ([[` ${cost}`, C.peach]] as Seg[]) : [])]
       }
       const cell = (k: string, label: string, value: RenderChildren, extra: RenderChildren) => (
-        <Box key={`mc-${k}`} flexDirection="column" width="25%" borderStyle="round" borderColor={hex(C.edgeHi)} backgroundColor={hex(cardBg('done'))} paddingX={1}>
-          <Text color={hex(C.faint)}>{label}</Text>
+        <Box key={`mc-${k}`} flexDirection="column" {...(desktop ? { flexGrow: 1, flexShrink: 1, minWidth: 0, width: W < 46 ? '48%' : '23%', gap: 1, padding: 1 } : { width: '25%', paddingX: 1 })} borderStyle="round" borderColor={hex(C.edgeHi)} backgroundColor={hex(cardBg('done'))}>
+          <Text color={hex(desktop ? C.dim : C.faint)}>{heading(label)}</Text>
           {value}
           {extra}
         </Box>
@@ -1339,7 +1497,7 @@ export const register: Register = (on, options) => {
           <Box flexDirection="row">
             <Text bold color={hex(C.master)}>{TEXT.panelTitle} </Text>
             <Box flexGrow={1} flexShrink={1} minWidth={0}><Text wrap="truncate-end" color={hex(C.dim)}>{`${TEXT.agentsCount(m.all.length + 1)} · updated ${new Date(t).toTimeString().slice(0, 8)}`}</Text></Box>
-            <Button key="mode" hotkey="m" plain onPress={() => void update($, modeAtom, x => (x === 'rows' ? 'cards' : 'rows'))}>
+            <Button key="mode" hotkey="m" plain={desktop ? undefined : true} onPress={() => void update($, modeAtom, x => (x === 'rows' ? 'cards' : 'rows'))}>
               <Text color={hex(C.dim)}>{mode === 'rows' ? TEXT.modeCards : TEXT.modeRows}</Text>
             </Button>
           </Box>
@@ -1353,13 +1511,23 @@ export const register: Register = (on, options) => {
           {section('metrics', TEXT.secMetrics, m.metrics.summary)}
           {open['metrics'] && (
             <Box flexDirection="column">
-              <Box flexDirection="row">
-                {cell('st', TEXT.cellStages, <Text bold color={hex(C.yellow)}>{m.metrics.stagesTxt}</Text>, <Text><Text color={hex(C.yellow)}>{meter(m.metrics.stagesPct, cw)[0]}</Text><Text color={hex(C.track)}>{meter(m.metrics.stagesPct, cw)[1]}</Text></Text>)}
-                {cell('ctx', TEXT.cellCtx, <Text bold color={hex(m.metrics.ctxC)}>{m.metrics.ctxPct !== undefined ? `${m.metrics.ctxPct}%` : '–'}</Text>, <Text><Text color={hex(m.metrics.ctxC)}>{meter(m.metrics.ctxPct ?? 0, cw)[0]}</Text><Text color={hex(C.track)}>{meter(m.metrics.ctxPct ?? 0, cw)[1]}</Text></Text>)}
+              <Box flexDirection="row" flexWrap={desktop ? 'wrap' : 'nowrap'} gap={desktop ? 1 : 0}>
+                {cell('st', TEXT.cellStages, <Text bold color={hex(C.yellow)}>{m.metrics.stagesTxt}</Text>, desktop ? <Text color={hex(C.dim)}>declared stages</Text> : <Text><Text color={hex(C.yellow)}>{meter(m.metrics.stagesPct, cw)[0]}</Text><Text color={hex(C.track)}>{meter(m.metrics.stagesPct, cw)[1]}</Text></Text>)}
+                {cell('ctx', TEXT.cellCtx, <Text bold color={hex(m.metrics.ctxC)}>{m.metrics.ctxPct !== undefined ? `${m.metrics.ctxPct}%` : '–'}</Text>, desktop ? progress(m.metrics.ctxPct, m.metrics.ctxC, 'Master context', 64) : <Text><Text color={hex(m.metrics.ctxC)}>{meter(m.metrics.ctxPct ?? 0, cw)[0]}</Text><Text color={hex(C.track)}>{meter(m.metrics.ctxPct ?? 0, cw)[1]}</Text></Text>)}
                 {cell('tok', TEXT.cellTokens, <Text wrap="truncate-end"><Text color={hex(C.cyan)}>↑</Text>{m.metrics.tokIn}</Text>, <Text wrap="truncate-end" color={hex(C.dim)}><Text color={hex(C.pink)}>↓</Text>{m.metrics.tokOut}</Text>)}
-                {cell('cost', TEXT.cellCost, <Text bold wrap="truncate-end" color={hex(C.peach)}>{m.metrics.costTxt}</Text>, <Text wrap="truncate-end" color={hex(C.peach)}>{m.metrics.costSpark || ' '}</Text>)}
+                {cell('cost', TEXT.cellCost, <Text bold wrap="truncate-end" color={hex(C.peach)}>{m.metrics.costTxt}</Text>, desktop ? history(s.session?.costHist ?? [], C.peach, 'Session cost history', 64) : <Text wrap="truncate-end" color={hex(C.peach)}>{m.metrics.costSpark || ' '}</Text>)}
               </Box>
               {m.metrics.limits.map(l => {
+                if (desktop) return (
+                  <Box key={`lim-${l.name}`} flexDirection="column" gap={1} marginTop={1}>
+                    <Box flexDirection="row" gap={1} flexWrap="wrap" alignItems="center">
+                      <Text color={hex(C.dim)}>{l.name}</Text>
+                      <Text bold color={hex(l.c)}>{Math.round(l.pct)}%</Text>
+                      {l.reset !== undefined && <Text wrap="wrap" color={hex(C.faint)}>{TEXT.usageResets(l.at, l.reset)}</Text>}
+                    </Box>
+                    {progress(l.pct, l.c, `${l.name} usage`, Math.max(100, Math.min(280, W * 5)))}
+                  </Box>
+                )
                 // name (6) + bar + "  42%" (5) + "  resets …": the bar takes what the text leaves
                 const reset = l.reset !== undefined ? `  ${TEXT.usageResets(l.at, l.reset)}` : ''
                 // one width for every bar, so they line up: the longest reset text sets it
@@ -1386,7 +1554,7 @@ export const register: Register = (on, options) => {
             </Box>
           )}
 
-          <Box key="card-master" flexDirection="column" borderStyle="round" borderColor={hex(cardEdge(ms))} backgroundColor={hex(mBg)} paddingX={1} marginTop={1}>
+          <Box key="card-master" flexDirection="column" borderStyle="round" borderColor={hex(desktop ? C.edgeHi : cardEdge(ms))} backgroundColor={hex(mBg)} paddingX={1} marginTop={1}>
             <Box flexDirection="row" gap={1}>
               {crab('p-master', '', 0, miniCards, mBg)}
               <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
@@ -1394,7 +1562,7 @@ export const register: Register = (on, options) => {
                   <Box flexGrow={1}><Text bold color={hex(C.master)}>{TEXT.masterTitle}</Text></Box>
                   {chip(ms)}
                 </Box>
-                <Text wrap="truncate-end"><Text color={hex(ms === 'working' ? C.mint : C.faint)}>⏺</Text> <Text bold>{m.master.tool}</Text> <Text color={hex(C.dim)}>{m.master.arg}</Text></Text>
+                <Text wrap={desktop ? 'wrap' : 'truncate-end'}><Text color={hex(ms === 'working' ? C.mint : C.faint)}>⏺</Text> <Text bold>{m.master.tool}</Text> <Text color={hex(C.dim)}>{m.master.arg}</Text></Text>
                 <Text wrap="truncate-end" color={hex(C.dim)}>{TEXT.delegated} <Text color={hex(C.yellow)}>{m.master.delegated}</Text> done</Text>
                 <Text wrap="truncate-end" color={hex(C.dim)}>{m.master.tokTxt}  <Text color={hex(C.peach)}>{m.master.costTxt}</Text></Text>
                 {ctxLine('m-ctx', m.master.ctxPct, m.master.ctxC, textW, '', '')}
@@ -1404,6 +1572,15 @@ export const register: Register = (on, options) => {
             {section('deleg', TEXT.secDelegation, TEXT.subagentsCount(m.all.length))}
             {open['deleg'] && m.all.map((v, k) => {
               const nameW = Math.max(6, cardInner - 22)
+              if (desktop) return (
+                <Box key={`deleg-${v.id}`} flexDirection="row" gap={1} alignItems="center" marginTop={1}>
+                  <Box flexGrow={1} flexShrink={1} minWidth={0}>
+                    <Button key={`dl-${v.id}`} plain onPress={select(v.id)}><Text wrap="wrap" color={hex(v.color)}>{v.name}</Text></Button>
+                  </Box>
+                  <Text color={hex(C.dim)}>{v.progTxt} stages</Text>
+                  {chip(v.st)}
+                </Box>
+              )
               return (
                 <Button key={`dl-${v.id}`} plain onPress={select(v.id)}>
                   <Text color={hex(C.faint)}>{k === m.all.length - 1 ? '└─ ' : '├─ '}</Text>
@@ -1422,7 +1599,7 @@ export const register: Register = (on, options) => {
               <Box flexDirection="column">
                 <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
                   {m.filters.map(f => (
-                    <Button key={`f-${f.id}`} plain onPress={() => void update($, filterAtom, () => f.id)}>
+                    <Button key={`f-${f.id}`} plain={desktop ? undefined : true} onPress={() => void update($, filterAtom, () => f.id)}>
                       <Text color={hex(f.id === filter ? C.text : C.dim)} {...(f.id === filter ? { backgroundColor: hex(C.chip) } : {})}>{` ${f.id} `}<Text color={hex(C.faint)}>{f.n} </Text></Text>
                     </Button>
                   ))}
@@ -1445,9 +1622,9 @@ export const register: Register = (on, options) => {
                       flexDirection="column"
                       {...(rows
                         ? { backgroundColor: hex(bg), hover: { backgroundColor: hex(cardBg(v.st, true)) }, ...(n > 0 ? { marginTop: 0 } : {}) }
-                        : { borderStyle: 'round', borderColor: hex(cardEdge(v.st)), backgroundColor: hex(bg), hover: { borderColor: hex(cardEdge(v.st, true)) }, paddingX: 1, marginTop: 1 })}
+                        : { borderStyle: 'round', borderColor: hex(desktop ? C.edgeHi : cardEdge(v.st)), backgroundColor: hex(bg), hover: { borderColor: hex(cardEdge(v.st, true)) }, paddingX: desktop ? 1 : 1, ...(desktop ? { paddingY: 1 } : {}), marginTop: 1 })}
                     >
-                      {rows && n > 0 && <Text color={hex(C.line2)}>{'─'.repeat(Math.max(1, cardInner))}</Text>}
+                      {rows && n > 0 && rule(`row-separator-${v.id}`, cardInner)}
                       <Box flexDirection="row" gap={1}>
                         {crab(`cs-${v.id}`, v.id, v.idx, rows || miniCards, bg)}
                         {(() => {
@@ -1456,15 +1633,18 @@ export const register: Register = (on, options) => {
                           const chipW = short ? 3 : ST[v.st].l.length + 4
                           const open_ = select(v.id)
                           return (
-                            <Box flexDirection="column" width={tw}>
+                            <Box flexDirection="column" {...(desktop ? { flexGrow: 1, flexShrink: 1, minWidth: 0, gap: 1 } : { width: tw })}>
                               <Box flexDirection="row" gap={1}>
                                 {rowButton(`b-${v.id}`, [[v.name, v.color, true]], tw - chipW - 1, open_, v.idx <= 9 ? String(v.idx) : undefined)}
                                 {chip(v.st, short)}
                               </Box>
                               {!rows && rowButton(`cl-${v.id}-role`, [[`${v.role} · ${v.model}`, C.dim]], tw, open_)}
                               {rowButton(`cl-${v.id}-tool`, [['⏺ ', v.toolC], [v.tool, C.text, true], [` ${v.arg}`, C.dim]], tw, open_)}
-                              {rowButton(`cl-${v.id}-prog`, [[v.bar || '–', ST[v.st].c], [` ${v.progTxt}`, C.dim], [`  ${v.ago}`, C.faint]], tw, open_)}
-                              {rowButton(`cl-${v.id}-ctx`, ctxSegs(v.ctxPct, v.ctxC, tw, rows ? v.tokTxt : '', rows ? v.costTxt : ''), tw, open_)}
+                              {rowButton(`cl-${v.id}-prog`, desktop ? [[`${v.progTxt} declared stages`, C.dim], [` · ${v.ago}`, C.faint]] : [[v.bar || '–', ST[v.st].c], [` ${v.progTxt}`, C.dim], [`  ${v.ago}`, C.faint]], tw, open_)}
+                              {desktop ? <Box flexDirection="column" gap={1}>
+                                {rowButton(`cl-${v.id}-ctx`, [[`Context ${v.ctxPct !== undefined ? `${v.ctxPct}%` : '–'}`, v.ctxC], ...(rows ? [[` · ${v.tokTxt} · ${v.costTxt}`, C.dim] as Seg] : [])], tw, open_)}
+                                {progress(v.ctxPct, v.ctxC, `${v.name} context`)}
+                              </Box> : rowButton(`cl-${v.id}-ctx`, ctxSegs(v.ctxPct, v.ctxC, tw, rows ? v.tokTxt : '', rows ? v.costTxt : ''), tw, open_)}
                               {!rows && rowButton(`cl-${v.id}-tok`, [[v.tokTxt, C.dim], [`  ${v.costTxt}`, C.peach]], tw, open_)}
                               {!rows && rowButton(`cl-${v.id}-sum`, [[v.summary, v.st === 'blocked' ? C.pink : C.faint]], tw, open_)}
                             </Box>
@@ -1505,12 +1685,31 @@ export const register: Register = (on, options) => {
           {problems.length > 0 && <Text color="#e5484d">{TEXT.problemsBanner(problems.length)}</Text>}
           <Box flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1}>
             <Button key="fkey" hotkey="f" plain onPress={() => void update($, filterAtom, x => FILTERS[(FILTERS.indexOf(x ?? 'all') + 1) % FILTERS.length] as Filter)}>filter</Button>
-            <Text color={hex(C.faint)} wrap="truncate-end">{TEXT.listHints}</Text>
+            {!desktop && <Text color={hex(C.faint)} wrap="truncate-end">{TEXT.listHints}</Text>}
           </Box>
         </Box>
       )
     }
-    paneCrabs = crabs
-    return body
-  }).catch(($, e, next) => next(e))
+    panes.set(e.surface, { site: e.requestId, crabs, view: paneView })
+    const drawing = e.surface === 'desktop' ? desktopDrawing(body) : body
+    lastPaneTrees.set(e.surface, drawing)
+    return drawing
+  }).catch(($, e, next): RenderElement | Promise<RenderElement> => {
+    if (e.surface !== 'desktop' && e.surface !== 'terminal') return next(e)
+    // Recovery must be pure: a re-entry catch cannot call the engine, including resolve/state.
+    const previous = lastPaneTrees.get(e.surface)
+    if (previous) return { type: 'Box', props: { flexDirection: 'column' }, children: [
+      panelSnapshot(previous),
+      { type: 'Text', props: { wrap: 'wrap', dimColor: true }, children: [`CrabBus refresh failed (${next.error.kind}): ${(next.error.message ?? 'retrying').slice(0, 240)}`] },
+    ] }
+    const pixels = masterCard(emptyState(), 0, 1)
+    const picture: RenderElement = e.surface === 'desktop'
+      ? { type: 'Svg', props: { source: toSvg(pixels), alt: 'Master crab', width: CARD_W * 4, height: CARD_H * 4 } }
+      : { type: 'Raster', props: { key: 'p-master', ...cellsOf(pixels) }, raster: { plugin: 'crabbus' } }
+    return { type: 'Box', props: { flexDirection: 'column', gap: 1 }, children: [
+      picture,
+      { type: 'Text', props: { bold: true }, children: ['Master'] },
+      { type: 'Text', props: { wrap: 'wrap' }, children: [`CrabBus could not refresh the panel (${next.error.kind}): ${(next.error.message ?? 'waiting for the next refresh').slice(0, 240)}`] },
+    ] }
+  })
 }

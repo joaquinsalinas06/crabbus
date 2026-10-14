@@ -1,22 +1,24 @@
 // Kit tests for the hooks module (claude plugin test). The pure logic has its own Node specs in spec/.
 import { describe, expect, mock, test } from 'claude-code/testing'
-import type { AgentSpawnInput, On, RenderPropsOf, SessionSendInput, SessionStartInput, ToolCallInput, TurnCompleteInput } from 'claude-code'
+import type { AgentSpawnInput, On, RenderNode, RenderPropsOf, SessionSendInput, SessionStartInput, ToolCallInput, TurnCompleteInput } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
-const start: SessionStartInput = { surface: 'terminal', isInteractive: true, cwd: '/work' }
 
 const spawn = (over: Partial<AgentSpawnInput>): AgentSpawnInput => ({
   tool_use_id: 't1', prompt: 'do the backend', description: 'backend', subagentType: 'general-purpose',
   provider: { plugin: 'engine', tier: 'core' }, parentModel: 'opus', background: true, fork: false, permissionMode: 'default', ...over,
 })
 
-function stubs(on: On, prompts: string[], ran: string[], sent: string[] = []): ReturnType<typeof mock.clock> {
+function stubs(on: On, prompts: string[], ran: string[], sent: string[] = [], openPane = true): ReturnType<typeof mock.clock> {
   const clock = mock.clock(on)
+  on('ui.close', () => ({ value: undefined }))
+  if (openPane) on('ui.open', () => ({ value: { isPlaced: true } }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('tool.register', ($, e) => ({ value: { tool: `mcp__crabbus__${e.name}` } }))
+  let spawned = 0
   on('agent.spawn', ($, e) => {
     prompts.push(e.prompt)
-    return { model: 'claude-opus-5-5', agentId: 'sub1' }
+    return { model: 'claude-opus-5-5', agentId: `sub${++spawned}` }
   })
   on('tool.call', { tool: 'Read' }, ($, e) => {
     ran.push(e.tool)
@@ -38,7 +40,10 @@ const status = async ($: Engine, agent?: string): Promise<string> => {
   return String((r as { result?: unknown }).result)
 }
 
-describe('crabbus', () => {
+const closePane = ($: Engine) => $.command.run({ command: 'test-close-pane', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 120 } })
+
+for (const surface of ['terminal', 'desktop'] as const) describe(`crabbus (${surface})`, () => {
+  const start: SessionStartInput = { surface, isInteractive: true, cwd: '/work' }
   test('a spawn gets the reporting brief and shows up observed, then declared, then done', async ($, on) => {
     const prompts: string[] = []
     const ran: string[] = []
@@ -168,7 +173,7 @@ describe('crabbus', () => {
   // ---- the v3 panel
 
   const PANE_PROPS: RenderPropsOf['Pane'] = { title: 'Agents', isFocused: true, bodyColumns: 56, placement: 'dock', scroll: { offset: 0, bodyRows: 80 }, view: {} }
-  const mountPane = ($: Engine) => $.ui.mount({ plugin: 'crabbus', surface: 'terminal', component: 'Pane', props: PANE_PROPS, requestId: 'crabbus' })
+  const mountPane = ($: Engine) => $.ui.mount({ plugin: 'crabbus', surface, component: 'Pane', props: PANE_PROPS, requestId: 'crabbus' })
   const ask = (id: string) => ({ tool: 'Bash', input: { command: 'rm -rf .cache' }, tool_use_id: id, agentId: 'sub1' })
 
   test('a subagent permission ask shows as blocked in the panel, the verdict untouched, until the call runs', async ($, on) => {
@@ -206,23 +211,23 @@ describe('crabbus', () => {
     await $.agent.spawn(spawn({}))
     await $.tool.call({ tool: 'mcp__crabbus__bus_step', plan: ['read', 'fix', 'test'], done: 1, current: 'fixing', tool_use_id: 's1', agentId: 'sub1' } as ToolCallInput)
     const ui = await mountPane($)
-    for (const t of [/^agents $/, /METRICS/, /DELEGATION/, /SUBAGENTS/, /ACTIVITY/, /^master$/]) expect(await ui.find({ type: 'Text', text: t })).toBeDefined()
+    for (const t of [/^agents $/, /METRICS/i, /DELEGATION/i, /SUBAGENTS/i, /ACTIVITY/i, /^master$/]) expect(await ui.find({ type: 'Text', text: t })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /1\/3 stages/ })).toBeDefined()
     await ui.press({ key: 'mode' })
     expect(await ui.find({ type: 'Text', text: /cards/ })).toBeDefined()
     await ui.press({ key: 'b-sub1' })
-    expect(await ui.find({ type: 'Text', text: /DETAILS/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /STAGES/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /DETAILS/i })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /STAGES/i })).toBeDefined()
     await ui.input({ key: 'msg-sub1', text: 'use JWT' })
     await clock.settle()
     expect(sent).toContain('use JWT')
     expect(await status($, 'sub1')).toMatch(/"use JWT": accepted/)
     await ui.press({ key: 'back' })
-    expect(await ui.find({ type: 'Text', text: /METRICS/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /METRICS/i })).toBeDefined()
     await ui.unmount()
   })
 
-  test('every section, tab and mode of the panel draws a tree the terminal accepts', async ($, on) => {
+  test('every section, tab and mode of the panel draws a tree the surface accepts', async ($, on) => {
     const clock = stubs(on, [], [])
     await $.session.start(start)
     await $.agent.spawn(spawn({}))
@@ -246,20 +251,22 @@ describe('crabbus', () => {
     await $.session.start(start)
     await $.agent.spawn(spawn({}))
     await $.turn.complete({ answer: 'ok', durationMs: 5, isAborted: false, turnId: 'tt', agentId: 'sub1', reason: 'answer' })
-    const ui = await $.ui.mount({ plugin: 'crabbus', surface: 'terminal', component: 'Pane', props: { ...PANE_PROPS, bodyColumns: 40 }, requestId: 'crabbus' })
-    expect(await ui.find({ type: 'Text', text: / ✓ done / })).toBeUndefined()
-    expect((await ui.findAll({ type: 'Text', text: /^ ✓ $/ })).length).toBeGreaterThan(0)
+    const ui = await $.ui.mount({ plugin: 'crabbus', surface, component: 'Pane', props: { ...PANE_PROPS, bodyColumns: 40 }, requestId: 'crabbus' })
+    if (surface === 'terminal') {
+      expect(await ui.find({ type: 'Text', text: / ✓ done / })).toBeUndefined()
+      expect((await ui.findAll({ type: 'Text', text: /^ ✓ $/ })).length).toBeGreaterThan(0)
+    } else expect(await ui.find({ type: 'Text', text: / ✓ done / })).toBeDefined()
     // the crab itself is a Raster: a Button under the pointer inverts, which would flip its half-block rows
     for (const k of ['b-sub1', 'cl-sub1-tool', 'cl-sub1-ctx']) {
       await ui.press({ key: k })
-      expect(await ui.find({ type: 'Text', text: /DETAILS/ })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: /DETAILS/i })).toBeDefined()
       await ui.press({ key: 'back' })
     }
     await ui.unmount()
   })
 
   test('/costume opens the wardrobe: costumes are picked and the user rules edited at once, saved behind it', async ($, on) => {
-    stubs(on, [], [])
+    stubs(on, [], [], [], false)
     mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg', HOME: '/home/u' })
     const files: Record<string, string> = {
       'mine.json': JSON.stringify({ type: 'rules', active: ['fable', 'heavy'], rules: [{ if: { description: 'dino' }, costume: 'light' }] }),
@@ -282,7 +289,7 @@ describe('crabbus', () => {
     const ui = await mountPane($)
     // names what is missing when a find fails
     const drawn = async (text: RegExp) => expect((await ui.find({ type: 'Text', text })) ? String(text) : `not drawn: ${String(text)}`).toBe(String(text))
-    for (const t of [/wardrobe/, /COSTUMES/, /MY RULES/, /BUILT-IN RULES/]) await drawn(t)
+    for (const t of [/wardrobe/, /COSTUMES/i, /MY RULES/i, /BUILT-IN RULES/i]) await drawn(t)
 
     // a costume is picked and taken out of the rotation: the rules text already says so, and the file follows
     // a card is picked by its name or its state line
@@ -352,10 +359,10 @@ describe('crabbus', () => {
 
     // back to the agents
     await ui.press({ key: 'view-agents' })
-    await drawn(/METRICS/)
+    await drawn(/METRICS/i)
     // and the tab row takes the person back to the wardrobe without a command
     await ui.press({ key: 'view-wardrobe' })
-    await drawn(/COSTUMES/)
+    await drawn(/COSTUMES/i)
     await ui.unmount()
 
     // without a panel the command prints the same facts as text
@@ -364,4 +371,456 @@ describe('crabbus', () => {
     expect(fallback).toMatch(/WEARING NOW:/)
     expect(fallback).toMatch(/RULES IN ORDER/)
   })
+
+  test('sprites update their state, reduced-motion Desktop stays fixed, and only terminal blits', { options: { reduceMotion: surface === 'desktop' }, plugins: [{ name: 'pane-closer', register: on => { on('command.run', { command: 'test-close-pane' }, async $ => { await $.ui.close({ id: 'crabbus' }); return { text: '' } }) } }] }, async ($, on) => {
+    const clock = stubs(on, [], [])
+    const blits: string[] = []
+    on('ui.blit', ($, e) => { blits.push(e.requestId); return { value: {} } })
+    await $.session.start(start)
+    await $.agent.spawn(spawn({}))
+    const ui = await mountPane($)
+    const type = surface === 'terminal' ? 'Raster' : 'Svg'
+    expect((await ui.findAll({ type })).length).toBeGreaterThan(0)
+    expect(await ui.find({ type: surface === 'terminal' ? 'Svg' : 'Raster' })).toBeUndefined()
+    const agentSprite = async () => surface === 'terminal' ? ui.find({ key: 'cs-sub1' }) : (await ui.findAll({ type: 'Svg' })).find(x => x.props.alt === 'Crab: backend')
+    const before = (await agentSprite())?.props
+    if (surface === 'desktop') {
+      expect(before?.width).toBe(72)
+      expect(before?.height).toBe(56)
+      expect(before?.isInteractive).toBeUndefined()
+    }
+    await clock.advance(1000)
+    expect(surface === 'desktop' ? blits.length === 0 : blits.length > 0).toBe(true)
+    if (surface === 'desktop') {
+      expect((await agentSprite())?.props.source).toBe(before?.source)
+    }
+    await $.tool.call({ tool: 'mcp__crabbus__bus_step', blocker: 'waiting for input', tool_use_id: 'block', agentId: 'sub1' } as ToolCallInput)
+    await clock.advance(1100)
+    expect(await ui.find({ type: 'Text', text: /blocked/ })).toBeDefined()
+    if (surface === 'desktop') expect((await agentSprite())?.props.source).not.toBe(before?.source)
+    await $.turn.complete({ answer: 'ok', durationMs: 5, isAborted: false, turnId: 'tt', agentId: 'sub1', reason: 'answer' })
+    await clock.advance(1100)
+    expect(await ui.find({ type: 'Text', text: /done/ })).toBeDefined()
+    await ui.unmount()
+    await closePane($)
+    const count = blits.length
+    await clock.advance(1000)
+    expect(blits.length).toBe(count)
+    const reopened = await mountPane($)
+    expect((await reopened.findAll({ type })).length).toBeGreaterThan(0)
+    await reopened.unmount()
+  })
+
+  for (const band of ['auto', 'stage', 'off'] as const) test(`AbovePrompt respects ${band}, surveys, room and panel visibility`, { options: { band, openOnStart: false, reduceMotion: surface === 'desktop' }, plugins: [{ name: 'pane-closer', register: on => { on('command.run', { command: 'test-close-pane' }, async $ => { await $.ui.close({ id: 'crabbus' }); return { text: '' } }) } }] }, async ($, on) => {
+    const clock = stubs(on, [], [])
+    on('ui.render', { component: 'AbovePrompt' }, ($, e) => $.ui.resolve(e).Text({ children: 'Original prompt content' }))
+    await $.session.start(start)
+    await $.agent.spawn(spawn({}))
+    const props = { bodyColumns: 120, maxRows: 10, hasSurvey: false, isWorking: false, scroll: { offset: 0, bodyRows: 10 }, view: {} }
+    const mount = () => $.ui.mount({ plugin: 'crabbus', surface, component: 'AbovePrompt', requestId: `band-${surface}`, props })
+    const ui = await mount()
+    expect(await ui.find({ type: 'Text', text: 'Original prompt content' })).toBeDefined()
+    expect((await ui.find({ type: surface === 'desktop' ? 'Svg' : 'Raster' })) !== undefined).toBe(band === 'stage')
+    if (surface === 'desktop' && band === 'stage') {
+      const source = (await ui.find({ type: surface === 'desktop' ? 'Svg' : 'Raster' }))?.props.source
+      await clock.advance(1100)
+      expect((await ui.find({ type: surface === 'desktop' ? 'Svg' : 'Raster' }))?.props.source).toBe(source)
+    }
+    await ui.redraw({ ...props, hasSurvey: true })
+    expect(await ui.find({ type: surface === 'desktop' ? 'Svg' : 'Raster' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: 'Original prompt content' })).toBeDefined()
+    await ui.redraw({ ...props, bodyColumns: 30, maxRows: 7 })
+    expect(await ui.find({ type: surface === 'desktop' ? 'Svg' : 'Raster' })).toBeUndefined()
+    const pane = await mountPane($)
+    await ui.redraw(props)
+    expect(await ui.find({ type: surface === 'desktop' ? 'Svg' : 'Raster' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: 'Original prompt content' })).toBeDefined()
+    await pane.unmount()
+    await closePane($)
+    await ui.redraw(props)
+    expect((await ui.find({ type: surface === 'desktop' ? 'Svg' : 'Raster' })) !== undefined).toBe(band === 'stage')
+    await ui.unmount()
+  })
+
+})
+
+// Both render sites can be attached to one session without sharing blit targets.
+test('terminal and Desktop keep separate pane and band registrations', { options: { band: 'stage' } }, async ($, on) => {
+  const clock = stubs(on, [], [])
+  const keys: string[] = []
+  on('ui.render', { component: 'AbovePrompt' }, ($, e) => $.ui.resolve(e).Text({ children: 'Original prompt content' }))
+  on('ui.blit', ($, e) => { keys.push(e.key); return { value: {} } })
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
+  await $.agent.spawn(spawn({}))
+  const paneProps = { title: 'Agents', isFocused: true, bodyColumns: 56, placement: 'dock' as const, scroll: { offset: 0, bodyRows: 80 }, view: {} }
+  const bandProps = { bodyColumns: 120, maxRows: 10, hasSurvey: false, isWorking: false, scroll: { offset: 0, bodyRows: 10 }, view: {} }
+  const terminal = await $.ui.mount({ plugin: 'crabbus', surface: 'terminal', component: 'Pane', props: paneProps, requestId: 'crabbus' })
+  const desktopBand = await $.ui.mount({ plugin: 'crabbus', surface: 'desktop', component: 'AbovePrompt', props: bandProps, requestId: 'desktop-band' })
+  expect(await desktopBand.find({ type: 'Client' })).toBeDefined()
+  await clock.advance(500)
+  expect(keys.includes('bus-stage')).toBe(false)
+  expect(keys.includes('p-master')).toBe(true)
+  const desktop = await $.ui.mount({ plugin: 'crabbus', surface: 'desktop', component: 'Pane', props: paneProps, requestId: 'crabbus' })
+  await desktopBand.redraw(bandProps)
+  expect(await desktopBand.find({ type: 'Client' })).toBeUndefined()
+  const before = (await desktop.findAll({ type: 'Client' })).map(x => x.key).join(',')
+  await clock.advance(1100)
+  expect((await desktop.findAll({ type: 'Client' })).map(x => x.key).join(',')).toBe(before)
+  expect(await terminal.find({ type: 'Raster' })).toBeDefined()
+  expect(await desktop.find({ type: 'Raster' })).toBeUndefined()
+  await desktopBand.unmount()
+  await desktop.unmount()
+  await terminal.unmount()
+})
+
+test('Desktop drawing budget replaces pictures while preserving working controls', async ($, on) => {
+  stubs(on, [], [])
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
+  for (let i = 0; i < 16; i++) await $.agent.spawn(spawn({ description: `agent ${i}` }))
+  const ui = await $.ui.mount({ plugin: 'crabbus', surface: 'desktop', component: 'Pane', requestId: 'crabbus', props: { title: 'Agents', isFocused: true, bodyColumns: 56, placement: 'dock', scroll: { offset: 0, bodyRows: 80 }, view: {} } })
+  expect((await ui.findAll({ type: 'Svg' })).length).toBe(1)
+  expect((await ui.findAll({ type: 'Svg' }))[0]!.props.alt).toBe('Master crab')
+  expect(JSON.stringify(await ui.drawn()).length < 100000).toBe(true)
+  await ui.press({ key: 'b-sub1' })
+  expect(await ui.find({ type: 'Text', text: /DETAILS/i })).toBeDefined()
+  expect(await ui.find({ type: 'Svg' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('Desktop reloads designs within two seconds even at one fps with reduced motion', { options: { fps: 1, reduceMotion: true } }, async ($, on) => {
+  const clock = stubs(on, [], [])
+  mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg', HOME: '/home/u' })
+  let version = 1
+  let master = 'fable'
+  on('fs.exists', ($, e) => ({ value: e.path === '/cfg/crabbus' }))
+  on('fs.list', () => ({ value: [{ name: 'rules.json', kind: 'file', size: 100, mtimeMs: version, isLink: false }] }))
+  on('fs.read', () => ({ value: JSON.stringify({ type: 'rules', master }) }))
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
+  const ui = await $.ui.mount({ plugin: 'crabbus', surface: 'desktop', component: 'Pane', requestId: 'crabbus', props: { title: 'Agents', isFocused: true, bodyColumns: 56, placement: 'dock', scroll: { offset: 0, bodyRows: 80 }, view: {} } })
+  const source = async () => (await ui.findAll({ type: 'Svg' })).find(x => x.props.alt === 'Master crab')?.props.source
+  const before = await source()
+  version = 2
+  master = 'light'
+  await clock.advance(1000)
+  expect(await source()).toBe(before)
+  await clock.advance(1000)
+  expect(await source()).not.toBe(before)
+  await ui.unmount()
+})
+
+test('an oversized Desktop stage source becomes alternative text rather than truncated SVG', { options: { band: 'stage', openOnStart: false }, timeoutMs: 10000 }, async ($, on) => {
+  stubs(on, [], [])
+  on('ui.render', { component: 'AbovePrompt' }, ($, e) => $.ui.resolve(e).Text({ children: 'Original prompt content' }))
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
+  for (let i = 0; i < 60; i++) await $.agent.spawn(spawn({ description: `agent ${i}` }))
+  const ui = await $.ui.mount({ plugin: 'crabbus', surface: 'desktop', component: 'AbovePrompt', requestId: 'large-stage', props: { bodyColumns: 2000, maxRows: 10, hasSurvey: false, isWorking: false, scroll: { offset: 0, bodyRows: 10 }, view: {} } })
+  expect(await ui.find({ type: 'Svg' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'CrabBus crew' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Original prompt content' })).toBeDefined()
+  await ui.unmount()
+})
+
+for (const bodyColumns of [36, 56, 90]) test(`Desktop uses graphical meters and flexible full names at ${bodyColumns} columns`, async ($, on) => {
+  stubs(on, [], [])
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
+  const name = 'Review the authentication module and explain the session refresh behavior'
+  await $.agent.spawn(spawn({ description: name }))
+  await $.tool.call({ tool: 'mcp__crabbus__bus_step', plan: ['read', 'review'], done: 1, current: 'reviewing', tool_use_id: 'steps', agentId: 'sub1' } as ToolCallInput)
+  const ui = await $.ui.mount({ plugin: 'crabbus', surface: 'desktop', component: 'Pane', requestId: 'crabbus', props: { title: 'Agents', isFocused: true, bodyColumns, placement: 'dock', scroll: { offset: 0, bodyRows: 80 }, view: {} } })
+  const picture = await ui.find({ type: 'Svg', in: 'cs-sub1' })
+  expect(picture?.props.width).toBe(72)
+  expect((await ui.find({ key: 'b-sub1' }))?.props.label).toContain(name)
+  expect((await ui.find({ key: 'mode' }))?.props.plain).toBeUndefined()
+  expect((await ui.find({ key: 'f-all' }))?.props.plain).toBeUndefined()
+  expect((await ui.findAll({ type: 'Svg' })).some(x => x.props.alt === 'Master context: unknown' && x.props.height === 6)).toBe(true)
+  const labels = async () => (await ui.findAll({ type: 'Text' })).map(x => x.text).join('\n')
+  expect(await labels()).not.toMatch(/[─━▰▱▮▁▂▃▄▅▆▇█└├]/)
+  expect(await ui.find({ type: 'Text', text: /declared stages/ })).toBeDefined()
+  await ui.press({ key: 'mode' })
+  expect((await ui.find({ key: 'b-sub1' }))?.props.label).toContain(name)
+  expect(await labels()).not.toMatch(/[─━▰▱▮▁▂▃▄▅▆▇█└├]/)
+  await ui.press({ key: 'b-sub1' })
+  for (const key of ['dCost', 'dTok', 'dTime']) await ui.press({ key: `sec-${key}` })
+  expect((await ui.findAll({ type: 'Svg' })).some(x => x.props.alt === 'Agent context: unknown')).toBe(true)
+  expect(await labels()).not.toMatch(/[─━▰▱▮▁▂▃▄▅▆▇█└├]/)
+  await ui.press({ key: 'back' })
+  await ui.press({ key: 'view-wardrobe' })
+  const next = await ui.find({ key: 'wd-next-1' })
+  expect(next?.props.label).toBe('Next')
+  expect(next?.props.plain).toBeUndefined()
+  expect((await ui.find({ key: 'wd-row-0' }))?.props.flexDirection).toBe('row')
+  expect((await ui.find({ key: 'wd-row-1' }))?.props.flexDirection).toBe('row')
+  expect((await ui.findAll({ type: 'Client' })).length).toBe(4)
+  for (const cell of await ui.findAll({ type: 'Box' })) {
+    if (cell.key?.startsWith('wd-cell-')) {
+      expect(cell.props.width).toBe('48%')
+      expect(cell.props.flexShrink).toBe(1)
+    }
+  }
+  await ui.press({ key: 'wd-next-1' })
+  expect(await labels()).not.toMatch(/[─━▰▱▮▁▂▃▄▅▆▇█└├╱╲]/)
+  await ui.unmount()
+})
+
+for (const fps of [1, 6, 10]) test(`Desktop Client requests changing art frames at ${fps} fps without terminal blits`, { options: { fps } }, async ($, on) => {
+  const clock = stubs(on, [], [])
+  const blits: string[] = []
+  on('ui.blit', ($, e) => { blits.push(e.key); return { value: {} } })
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
+  await $.agent.spawn(spawn({}))
+  const ui = await $.ui.mount({ plugin: 'crabbus', surface: 'desktop', component: 'Pane', requestId: 'crabbus', props: { title: 'Agents', isFocused: true, bodyColumns: 56, placement: 'dock', scroll: { offset: 0, bodyRows: 80 }, view: {} } })
+  expect((await ui.findAll({ type: 'Client' })).length).toBe(2)
+  const source = async () => (await ui.find({ type: 'Svg', in: 'cs-sub1' }))?.props.source
+  const frames = new Set([await source()])
+  const ms = Math.round(1000 / fps)
+  for (let i = 0; i < 8; i++) {
+    await clock.advance(ms)
+    await ui.advance(ms)
+    frames.add(await source())
+    if (fps > 1 && i === 2) expect(frames.size).toBeGreaterThan(1)
+  }
+  expect(frames.size).toBeGreaterThan(1)
+  expect(blits.length).toBe(0)
+  await ui.press({ key: 'b-sub1' })
+  expect(await ui.find({ type: 'Client', key: 'p-sub1' })).toBeDefined()
+  await clock.advance(ms)
+  await ui.advance(ms)
+  expect(await ui.find({ type: 'Svg', in: 'p-sub1' })).toBeDefined()
+  await ui.press({ key: 'back' })
+  await ui.press({ key: 'view-wardrobe' })
+  const costume = (await ui.findAll({ type: 'Client' }))[0]!
+  const before = (await ui.find({ type: 'Svg', in: costume.key! }))?.props.source
+  let changed = false
+  for (let i = 0; i < 6; i++) {
+    await clock.advance(ms)
+    await ui.advance(ms)
+    if ((await ui.find({ type: 'Svg', in: costume.key! }))?.props.source !== before) changed = true
+  }
+  expect(changed).toBe(true)
+  await ui.unmount()
+})
+
+test('Desktop AbovePrompt animates its entire stage through one Client', { options: { band: 'stage', openOnStart: false } }, async ($, on) => {
+  const clock = stubs(on, [], [])
+  on('ui.render', { component: 'AbovePrompt' }, ($, e) => $.ui.resolve(e).Text({ children: 'Original prompt content' }))
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
+  await $.agent.spawn(spawn({}))
+  const ui = await $.ui.mount({ plugin: 'crabbus', surface: 'desktop', component: 'AbovePrompt', requestId: 'desktop-stage', props: { bodyColumns: 120, maxRows: 10, hasSurvey: false, isWorking: false, scroll: { offset: 0, bodyRows: 10 }, view: {} } })
+  expect((await ui.findAll({ type: 'Client' })).length).toBe(1)
+  const before = (await ui.find({ type: 'Svg', in: 'bus-stage' }))?.props.source
+  const frames = new Set([before])
+  for (let i = 0; i < 6; i++) {
+    await clock.advance(167)
+    await ui.advance(167)
+    frames.add((await ui.find({ type: 'Svg', in: 'bus-stage' }))?.props.source)
+    if (i === 2) expect(frames.size).toBeGreaterThan(1)
+  }
+  expect(frames.size).toBeGreaterThan(1)
+  expect(await ui.find({ type: 'Text', text: 'Original prompt content' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a failed Desktop Client falls back to a fixed pose and leaves agent controls working', {
+  plugins: [{ name: 'client-fault-injector', tier: 'prepend', register(on) {
+    let injected = false
+    on('ui.render', { component: 'Pane', requestId: 'crabbus' }, async ($, e, next) => {
+      const tree = await next(e)
+      const breakOnce = (node: RenderNode): RenderNode => {
+        if (typeof node === 'string') return node
+        if (!injected && node.type === 'Client' && node.props.key === 'cs-sub1') {
+          injected = true
+          return { ...node, props: { ...node.props, props: { ...(node.props.props as Record<string, unknown>), ms: -1 } } }
+        }
+        if ('children' in node && node.children) return { ...node, children: node.children.map(breakOnce) } as RenderNode
+        return node
+      }
+      return breakOnce(tree) as Exclude<RenderNode, string>
+    })
+  } }],
+}, async ($, on) => {
+  const clock = stubs(on, [], [])
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
+  await $.agent.spawn(spawn({}))
+  const mount = () => $.ui.mount({ plugin: 'crabbus', surface: 'desktop', component: 'Pane', requestId: 'crabbus', props: { title: 'Agents', isFocused: true, bodyColumns: 56, placement: 'dock', scroll: { offset: 0, bodyRows: 80 }, view: {} } })
+  let refused = false
+  try { await mount() } catch { refused = true }
+  expect(refused).toBe(true)
+  const ui = await mount()
+  expect(await ui.find({ type: 'Client', key: 'cs-sub1' })).toBeUndefined()
+  const source = async () => (await ui.findAll({ type: 'Svg' })).find(x => x.props.alt === 'Crab: backend')?.props.source
+  const before = await source()
+  expect(before).toBeDefined()
+  await clock.advance(1100)
+  expect(await source()).toBe(before)
+  await ui.press({ key: 'b-sub1' })
+  expect(await ui.find({ type: 'Text', text: /Details/ })).toBeDefined()
+  await ui.unmount()
+})
+
+for (const surface of ['terminal', 'desktop'] as const) test(`the master is visible in an empty ${surface} pane after reload`, async ($, on) => {
+  stubs(on, [], [])
+  // A reload can render an already open pane before session.start runs again.
+  const ui = await $.ui.mount({ plugin: 'crabbus', surface, component: 'Pane', requestId: 'crabbus', props: { title: 'Agents', isFocused: true, bodyColumns: 56, placement: 'dock', scroll: { offset: 0, bodyRows: 80 }, view: {} } })
+  expect(await ui.find({ type: 'Text', text: /master/i })).toBeDefined()
+  expect(await ui.find({ type: surface === 'desktop' ? 'Client' : 'Raster' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('Desktop keeps the master above the prompt when there are no subagents', { options: { openOnStart: false } }, async ($, on) => {
+  const clock = stubs(on, [], [])
+  on('ui.render', { component: 'AbovePrompt' }, ($, e) => $.ui.resolve(e).Text({ children: 'Prompt' }))
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
+  const props = { bodyColumns: 120, maxRows: 10, hasSurvey: false, isWorking: false, scroll: { offset: 0, bodyRows: 10 }, view: {} }
+  const ui = await $.ui.mount({ plugin: 'crabbus', surface: 'desktop', component: 'AbovePrompt', requestId: 'idle-band', props })
+  expect(await ui.find({ type: 'Text', text: 'Master' })).toBeDefined()
+  expect(await ui.find({ type: 'Client', key: 'bus-stage' })).toBeDefined()
+  await clock.advance(500)
+  await ui.advance(500)
+  expect(await ui.find({ type: 'Svg', in: 'bus-stage' })).toBeDefined()
+  await ui.redraw({ ...props, hasSurvey: true })
+  expect(await ui.find({ type: 'Client' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('Desktop falls back to SVG when its element table has no Client constructor', {
+  plugins: [{ name: 'older-desktop', tier: 'prepend', register(on) {
+    on('ui.resolve', async ($, e, next) => {
+      const table = await next(e)
+      if (e.surface !== 'desktop') return table
+      const { Client, ...rest } = table as Record<string, unknown>
+      return rest as never
+    })
+  } }],
+}, async ($, on) => {
+  stubs(on, [], [])
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
+  await $.agent.spawn(spawn({}))
+  const ui = await $.ui.mount({ plugin: 'crabbus', surface: 'desktop', component: 'Pane', requestId: 'crabbus', props: { title: 'Agents', isFocused: true, bodyColumns: 56, placement: 'dock', scroll: { offset: 0, bodyRows: 80 }, view: {} } })
+  expect(await ui.find({ type: 'Client' })).toBeUndefined()
+  expect((await ui.findAll({ type: 'Svg' })).some(x => x.props.alt === 'Master crab')).toBe(true)
+  await ui.press({ key: 'b-sub1' })
+  expect(await ui.find({ type: 'Text', text: /Details/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a first panel render failure shows the master and the error, then recovers', {
+  plugins: [{ name: 'render-failure', tier: 'prepend', register(on) {
+    let drawing = false
+    let broken = false
+    on('ui.render', { component: 'Pane', requestId: 'crabbus' }, async ($, e, next) => {
+      drawing = true
+      try { return await next(e) } finally { drawing = false }
+    })
+    on('state.get', { plugin: 'crabbus', key: 'bus' }, ($, e, next) => {
+      if (drawing && !broken) { broken = true; return { value: null } as never }
+      return next(e)
+    })
+  } }],
+}, async ($, on) => {
+  stubs(on, [], [])
+  const props = { title: 'Agents', isFocused: true, bodyColumns: 56, placement: 'dock' as const, scroll: { offset: 0, bodyRows: 80 }, view: {} }
+  const ui = await $.ui.mount({ plugin: 'crabbus', surface: 'desktop', component: 'Pane', requestId: 'crabbus', props })
+  expect(await ui.find({ type: 'Text', text: 'Master' })).toBeDefined()
+  expect(await ui.find({ type: 'Svg' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /could not refresh/ })).toBeDefined()
+  await ui.redraw(props)
+  expect(await ui.find({ type: 'Text', text: /could not refresh/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Client' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a later panel render failure retains a static master and rebuilds controls on recovery', {
+  plugins: [{ name: 'later-render-failure', tier: 'prepend', register(on) {
+    let drawing = 0
+    on('ui.render', { component: 'Pane', requestId: 'crabbus' }, async ($, e, next) => {
+      drawing++
+      return next(e)
+    })
+    on('state.get', { plugin: 'crabbus', key: 'bus' }, ($, e, next) => drawing === 2 ? { value: null } as never : next(e))
+  } }],
+}, async ($, on) => {
+  stubs(on, [], [])
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
+  await $.agent.spawn(spawn({}))
+  const props = { title: 'Agents', isFocused: true, bodyColumns: 56, placement: 'dock' as const, scroll: { offset: 0, bodyRows: 80 }, view: {} }
+  const ui = await $.ui.mount({ plugin: 'crabbus', surface: 'desktop', component: 'Pane', requestId: 'crabbus', props })
+  await ui.redraw(props)
+  expect((await ui.findAll({ type: 'Svg' })).some(x => x.props.alt === 'Master crab')).toBe(true)
+  expect(await ui.find({ type: 'Button' })).toBeUndefined()
+  if (!(await ui.find({ type: 'Text', text: /refresh failed/ }))) throw new Error('Recovery notice missing')
+  await ui.redraw(props)
+  await ui.press({ key: 'b-sub1' })
+  expect(await ui.find({ type: 'Text', text: /Details/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('Desktop wardrobe animation does not rebuild its panel on maintenance ticks', {
+  plugins: [{ name: 'render-counter', tier: 'prepend', register(on) {
+    let renders = 0
+    on('ui.render', { component: 'Pane', requestId: 'crabbus' }, async ($, e, next) => ({
+      type: 'Box', props: { flexDirection: 'column' }, children: [
+        await next(e), { type: 'Text', props: {}, children: [`Render count: ${++renders}`] },
+      ],
+    }))
+  } }],
+}, async ($, on) => {
+  const clock = stubs(on, [], [])
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
+  const ui = await $.ui.mount({ plugin: 'crabbus', surface: 'desktop', component: 'Pane', requestId: 'crabbus', props: { title: 'Agents', isFocused: true, bodyColumns: 56, placement: 'dock', scroll: { offset: 0, bodyRows: 80 }, view: {} } })
+  await ui.press({ key: 'view-wardrobe' })
+  const count = async () => (await ui.find({ type: 'Text', text: /Render count:/ }))?.text
+  const before = await count()
+  const costume = (await ui.findAll({ type: 'Client' }))[0]!
+  const frames = new Set<string>()
+  for (let i = 0; i < 36; i++) {
+    await clock.advance(167)
+    await ui.advance(167)
+    const source = (await ui.find({ type: 'Svg', in: costume.key! }))?.props.source
+    if (typeof source === 'string') frames.add(source)
+  }
+  expect(await count()).toBe(before)
+  expect(frames.size).toBeGreaterThan(1)
+  await ui.press({ key: 'wd-next-1' })
+  expect(await count()).not.toBe(before)
+  expect(await ui.find({ key: 'wd-row-0' })).toBeDefined()
+  await ui.unmount()
+})
+
+for (const bodyColumns of [36, 56, 90]) test(`Desktop wardrobe keeps four fixed slots across pages at ${bodyColumns} columns`, async ($, on) => {
+  stubs(on, [], [])
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
+  const ui = await $.ui.mount({ plugin: 'crabbus', surface: 'desktop', component: 'Pane', requestId: 'crabbus', props: { title: 'Agents', isFocused: true, bodyColumns, placement: 'dock', scroll: { offset: 0, bodyRows: 80 }, view: {} } })
+  await ui.press({ key: 'view-wardrobe' })
+  const geometry = async () => (await ui.findAll({ type: 'Box' }))
+    .filter(x => x.key?.startsWith('wd-cell-slot-') || x.key?.startsWith('wd-row-'))
+    .map(x => ({ key: x.key, width: x.props.width, height: x.props.height, minHeight: x.props.minHeight }))
+  const before = await geometry()
+  expect(before.length).toBe(6)
+  for (let i = 0; i < 3; i++) {
+    await ui.press({ key: 'wd-next-1' })
+    expect(await geometry()).toEqual(before)
+    await ui.press({ key: 'wd-prev-1' })
+    expect(await geometry()).toEqual(before)
+  }
+  for (const node of await ui.findAll({ type: 'Client' })) {
+    expect(node.props.width).toBe(9)
+    expect(node.props.height).toBe(4)
+  }
+  await ui.unmount()
+})
+
+test('Desktop pagination keeps the existing Client timer in occupied slots', async ($, on) => {
+  const clock = stubs(on, [], [])
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
+  const ui = await $.ui.mount({ plugin: 'crabbus', surface: 'desktop', component: 'Pane', requestId: 'crabbus', props: { title: 'Agents', isFocused: true, bodyColumns: 56, placement: 'dock', scroll: { offset: 0, bodyRows: 80 }, view: {} } })
+  await ui.press({ key: 'view-wardrobe' })
+  await ui.advance(100)
+  await ui.press({ key: 'wd-next-1' })
+  const source = async () => (await ui.find({ type: 'Svg', in: 'wd-slot-0' }))?.props.source
+  const before = await source()
+  await clock.advance(501)
+  // The 167ms surface timer has 67ms left. A remount would restart it at 100ms.
+  await ui.advance(67)
+  expect(await source()).not.toBe(before)
+  await ui.unmount()
 })
