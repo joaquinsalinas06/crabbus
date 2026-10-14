@@ -1,6 +1,6 @@
 {
   "name": "crabbus",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Star-topology observability for subagents: the master reads what each one is doing (observed, declared, verified), tracks SendMessage delivery, and animated pixel crabs show it live in the terminal.",
   "author": {
     "name": "joaquins"
