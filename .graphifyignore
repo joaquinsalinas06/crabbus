@@ -3,3 +3,6 @@ AGENTS.md
 CLAUDE.md
 # empty logs from the experiment runs: nothing to extract, re-queued on every update otherwise
 evidence/**/stderr.txt
+
+# Runtime worktrees contain copies of this repository.
+.crabbus/

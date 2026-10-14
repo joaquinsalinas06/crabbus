@@ -33,3 +33,6 @@
 - The band's `maxRows` is the only height limit (if not, the stage may scroll).
 - `$.state` survives a hot reload (designed for, unverified); module timers restart on reload.
 - `$.session.messages({ agentId, as: 'api' })` reads a running background subagent's transcript (if not, the detail falls back to the hooks' tool log).
+
+| Codex workspace-write excludes /tmp but permits per-user TMPDIR | Excluding both temporary roots | Runtime probe: blocking TMPDIR broke Node mkdtemp, npm cache creation and shell heredocs; allowing it passed Python, Node and npm without expanding Git metadata access. |
+| Gate external-agent rollout on linked-worktree sandbox support | Enable Antigravity auto mode despite inaccessible Git metadata | Antigravity 1.3.5 edited files but git status failed under --sandbox, including after omitting global Git configuration. Keep the feature disabled until the gate is resolved. |
