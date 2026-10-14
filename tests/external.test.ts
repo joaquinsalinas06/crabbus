@@ -171,13 +171,15 @@ for (const surface of ['terminal', 'desktop'] as const) test(`external ${surface
 test('native resume aliases the runtime loop ID to its original card', { options: cfg() }, async ($, on) => {
   host(on)
   let n = 0
-  on('agent.spawn', () => ({ agentId: ++n === 1 ? 'stable' : 'runtime-loop', model: 'model' }))
+  on('agent.spawn', () => ({ agentId: ++n === 1 ? 'stable' : n === 2 ? 'runtime-loop' : 'third-loop', model: 'model' }))
   on('tool.call', { tool: 'Read' }, () => ({ result: { type: 'text', file: { filePath: 'a.ts', content: 'x', numLines: 1, startLine: 1, totalLines: 1 } } as never }))
   await $.session.start(start)
   const original = { tool_use_id: 'spawn', prompt: 'task', description: 'native task', subagentType: 'general-purpose', provider: { plugin: 'engine', tier: 'core' as const }, parentModel: 'model', background: true, fork: false, permissionMode: 'default' as const }
   await $.agent.spawn(original)
   await $.agent.spawn({ ...original, resume: { agentId: 'stable' } } as typeof original)
   await $.tool.call({ tool: 'Read', file_path: '/repo/a.ts', tool_use_id: 'read', agentId: 'runtime-loop' } as ToolCallInput)
+  await $.agent.spawn({ ...original, resume: { agentId: 'runtime-loop' } } as typeof original)
+  await $.tool.call({ tool: 'Read', file_path: '/repo/a.ts', tool_use_id: 'read-again', agentId: 'third-loop' } as ToolCallInput)
   const s = await status($)
   expect(s).toContain('1 agent(s)')
   expect(s).toContain('[stable]')
