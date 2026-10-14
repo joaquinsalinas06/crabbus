@@ -1,7 +1,7 @@
 {
   "name": "crabbus",
   "version": "0.6.0",
-  "description": "Star-topology observability for subagents: the master reads what each one is doing (observed, declared, verified), tracks SendMessage delivery, and animated pixel crabs show it live in the terminal.",
+  "description": "Star-topology observability for subagents: observed, declared and verified progress, SendMessage tracking, and animated pixel crabs with shared controls in terminal and Desktop.",
   "author": {
     "name": "joaquins"
   },
@@ -11,13 +11,13 @@
     "fps": {
       "type": "number",
       "title": "Animation frames per second",
-      "description": "1 to 10 frames per second for the crabs (default 6)",
+      "description": "1 to 10 frames per second in terminal and Desktop (default 6)",
       "default": 6
     },
     "reduceMotion": {
       "type": "boolean",
       "title": "Reduce motion",
-      "description": "Draw one still frame per state instead of animating",
+      "description": "Draw one still frame per state instead of animating, on terminal and Desktop",
       "default": false
     },
     "openOnStart": {
@@ -29,7 +29,7 @@
     "band": {
       "type": "string",
       "title": "Band above the prompt",
-      "description": "auto: one discreet line only while the side pane is not shown; stage: the full animated stage there too; off: never",
+      "description": "auto: a quiet summary while the side pane is hidden (Desktop shows the master with an empty crew); stage: the full animated stage on terminal and Desktop; off: never",
       "default": "auto",
       "options": [
         "auto",
