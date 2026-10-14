@@ -241,7 +241,7 @@ describe('crabbus', () => {
     await ui.unmount()
   })
 
-  test('a narrow panel keeps chips whole and every card row is one press target', async ($, on) => {
+  test('a narrow panel keeps chips whole and every text row of a card is one press target', async ($, on) => {
     stubs(on, [], [])
     await $.session.start(start)
     await $.agent.spawn(spawn({}))
@@ -249,11 +249,119 @@ describe('crabbus', () => {
     const ui = await $.ui.mount({ plugin: 'crabbus', surface: 'terminal', component: 'Pane', props: { ...PANE_PROPS, bodyColumns: 40 }, requestId: 'crabbus' })
     expect(await ui.find({ type: 'Text', text: / ✓ done / })).toBeUndefined()
     expect((await ui.findAll({ type: 'Text', text: /^ ✓ $/ })).length).toBeGreaterThan(0)
-    for (const k of ['cl-sub1-tool', 'cl-sub1-ctx', 'cs-sub1-0']) {
+    // the crab itself is a Raster: a Button under the pointer inverts, which would flip its half-block rows
+    for (const k of ['b-sub1', 'cl-sub1-tool', 'cl-sub1-ctx']) {
       await ui.press({ key: k })
       expect(await ui.find({ type: 'Text', text: /DETAILS/ })).toBeDefined()
       await ui.press({ key: 'back' })
     }
     await ui.unmount()
+  })
+
+  test('/costume opens the wardrobe: costumes are picked and the user rules edited at once, saved behind it', async ($, on) => {
+    stubs(on, [], [])
+    mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg', HOME: '/home/u' })
+    const files: Record<string, string> = {
+      'mine.json': JSON.stringify({ type: 'rules', active: ['fable', 'heavy'], rules: [{ if: { description: 'dino' }, costume: 'light' }] }),
+    }
+    const wrote: string[] = []
+    on('fs.exists', ($, e) => ({ value: e.path === '/cfg/crabbus' }))
+    on('fs.list', () => ({ value: Object.entries(files).map(([name, t]) => ({ name, kind: 'file' as const, size: t.length, mtimeMs: 1, isLink: false })) }))
+    on('fs.read', ($, e) => ({ value: files[e.path.replace('/cfg/crabbus/', '')] ?? '' }))
+    on('fs.write', ($, e) => { files[e.path.replace('/cfg/crabbus/', '')] = e.text; wrote.push(e.path); return { value: undefined } })
+    let placed = true
+    on('ui.open', () => ({ value: { isPlaced: placed } }))
+    const told: string[] = []
+    on('prompt.submit', ($, e) => { told.push(e.text); return { text: e.text } })
+    await $.session.start(start)
+    await $.agent.spawn(spawn({ description: 'architect' }))
+    const cmd = (args: string) => $.command.run({ command: 'costume', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 120 } })
+    const text = async (args: string) => String(((await cmd(args)) as { text?: string }).text)
+
+    expect(await text('')).toMatch(/Wardrobe opened/)
+    const ui = await mountPane($)
+    // names what is missing when a find fails
+    const drawn = async (text: RegExp) => expect((await ui.find({ type: 'Text', text })) ? String(text) : `not drawn: ${String(text)}`).toBe(String(text))
+    for (const t of [/wardrobe/, /COSTUMES/, /MY RULES/, /BUILT-IN RULES/]) await drawn(t)
+
+    // a costume is picked and taken out of the rotation: the rules text already says so, and the file follows
+    // a card is picked by its name or its state line
+    await ui.press({ key: 'wd-pick-heavy-st' })
+    await drawn(/worn by 0/)
+    await ui.press({ key: 'wd-rot-heavy' })
+    expect(await text('rules')).toMatch(/ROTATION: fable\b(?!.*heavy)/)
+    expect(JSON.parse(files['mine.json'] as string).active).toEqual(['fable'])
+
+    // the master is chosen from the same card
+    await ui.press({ key: 'wd-master-heavy' })
+    expect(JSON.parse(files['mine.json'] as string).master).toBe('heavy')
+
+    // asking CrabBus comes first in the card; the form by hand is folded under it, for those who want it
+    await ui.input({ key: 'wd-tell-card', text: 'when it plans' })
+    expect(told).toHaveLength(1)
+    expect(told[0]).toContain('About the costume heavy: when it plans')
+    await drawn(/Claude is on it/)
+    await ui.press({ key: 'sec-wdManual' })
+
+    // a rule of the user's is added for the picked costume, moved up, given another costume, and removed
+    await ui.input({ key: 'wd-new-description', text: 'review' })
+    expect(JSON.parse(files['mine.json'] as string).rules).toEqual([{ if: { description: 'dino' }, costume: 'light' }, { if: { description: 'review' }, costume: 'heavy' }])
+    // and shows up marked as new
+    await drawn(/^ new $/)
+    await ui.press({ key: 'wd-up-2' })
+    expect(JSON.parse(files['mine.json'] as string).rules[0].costume).toBe('heavy')
+    await ui.press({ key: 'wd-del-1' })
+    expect(JSON.parse(files['mine.json'] as string).rules).toEqual([{ if: { description: 'dino' }, costume: 'light' }])
+
+    // the picked costume's card takes a date rule too, and lists it with its tag
+    await ui.press({ key: 'wd-crit-date' })
+    await ui.input({ key: 'wd-new-date', text: '12-01..12-31' })
+    expect(JSON.parse(files['mine.json'] as string).rules[1]).toEqual({ if: { from: '12-01', to: '12-31' }, costume: 'heavy' })
+    await drawn(/Dec 1 → Dec 31/)
+    // and removes it from the card
+    await ui.press({ key: 'wd-c-del-2' })
+    expect(JSON.parse(files['mine.json'] as string).rules).toHaveLength(1)
+    // a costume named in the full list opens its card
+    await ui.press({ key: 'wd-goto-1' })
+    await drawn(/\+ TELL CRABBUS ABOUT light/)
+    await ui.press({ key: 'wd-crit-description' })
+
+    // a pattern that could hang Claude Code is refused: nothing is written
+    const before = wrote.length
+    await ui.input({ key: 'wd-new-description', text: '(a+)+' })
+    expect(wrote.length).toBe(before)
+
+    // the costumes come a page at a time, at full size: opening light above turned to its page; the arrows turn it
+    await drawn(/2\/2/)
+    await ui.press({ key: 'wd-next-1' })
+    await drawn(/1\/2/)
+    await ui.press({ key: 'wd-pick-fable' })
+    await ui.press({ key: 'wd-prev-1' })
+    await drawn(/2\/2/)
+
+    // a long message no longer fits the one-line field: it is shown whole under it while it is typed
+    const long = 'make me a pumpkin crab like the september 2026 meme, with a stem and a big grin'
+    await ui.input({ key: 'wd-tell', text: long, kind: 'change' })
+    await drawn(/september 2026 meme, with a stem/)
+
+    // "Tell CrabBus" sends the person's words to Claude, with what is set now
+    await ui.input({ key: 'wd-tell', text: 'the one who plans wears the detective' })
+    expect(told).toHaveLength(2)
+    expect(told[1]).toContain('the person asks: "the one who plans wears the detective"')
+    expect(told[1]).toContain('RULES IN ORDER')
+
+    // back to the agents
+    await ui.press({ key: 'view-agents' })
+    await drawn(/METRICS/)
+    // and the tab row takes the person back to the wardrobe without a command
+    await ui.press({ key: 'view-wardrobe' })
+    await drawn(/COSTUMES/)
+    await ui.unmount()
+
+    // without a panel the command prints the same facts as text
+    placed = false
+    const fallback = await text('')
+    expect(fallback).toMatch(/WEARING NOW:/)
+    expect(fallback).toMatch(/RULES IN ORDER/)
   })
 })

@@ -6,7 +6,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, FsEntry, Register, RenderChildren } from 'claude-code'
 
-import { CARD_W, cellsOf } from '../src/art.ts'
+import { CARD_H, CARD_W, canvas, cellsOf, drawAgent } from '../src/art.ts'
 import { textRows } from '../src/canvas.ts'
 import { BUILTIN } from '../src/builtin.ts'
 import { MASTER, direct, emptyDirector, playOf, type Director } from '../src/director.ts'
@@ -15,10 +15,17 @@ import { normalizeDesignJson } from '../src/legacy.ts'
 import { PERSON_DECIDES, describeInput, emptyState, onComplete, onMasterTool, onMeasure, onPermissionAnswer, onPermissionAsk, onReceive, onSend, onSpawn, onStep, onToolEnd, onToolStart, onUsage, parseStep, resolveTarget, statusReport, stepReceipt, type Limit } from '../src/model.ts'
 import type { AgentRec, BusState, Completion, SpawnInfo } from '../src/model.ts'
 import { BUILTIN_ORIGIN, bundle, type DesignFile, type Pack } from '../src/pack.ts'
-import { FILTERS, TABS, detailModel, fallbackLines, filterTab, listModel, panelAgents, transcriptLines, type AgentView, type Filter, type TxLine, type TxTab } from '../src/panel.ts'
+import { FILTERS, TABS, detailModel, fallbackLines, filterTab, formatCostumeRulesText, listModel, newRules, previewMood, tellPrompt, panelAgents, transcriptLines, wardrobeModel, type AgentView, type Filter, type TxLine, type TxTab, type RulePart, type WardrobeCostumeView, type WardrobeRuleView } from '../src/panel.ts'
 import { agentCard, agentLabel, compose, isActive, layout, lineParts, masterCard, masterLabel, masterMini, miniCard, paneList, phase, type Label } from '../src/scene.ts'
 import { TEXT } from '../src/text.ts'
 import { C, CARD_BG, ORDER, ST, cardBg, cardEdge, fit, meter, type UiStatus } from '../src/theme.ts'
+
+// the picked card in the wardrobe, a step lighter than the others
+const CARD_HOT = cardBg('done', true)
+// one color per thing a rule looks at, the same in every place a rule is drawn
+const CRIT_COLOR: Record<RulePart['tag'], number> = { description: C.cyan, prompt: C.yellow, type: C.lav, name: C.peach, mode: C.pink, model: C.thought, kind: C.mint, date: C.master }
+import { classifyDeterministic } from '../src/kinds.ts'
+import { CRITERIA, planRuleEdit, type Criterion, type RuleOp } from '../src/rules-edit.ts'
 
 const PANE = 'crabbus'
 const STEP = 'mcp__crabbus__bus_step'
@@ -33,11 +40,19 @@ const selected = atom({ plugin: 'crabbus', key: 'selected' } as const, null as s
 // the pane also lists agents that finished long ago
 const showAll = atom({ plugin: 'crabbus', key: 'showAll' } as const, false)
 // the panel's collapsible sections, as the design opens them
-const OPEN0: Record<string, boolean> = { metrics: true, deleg: true, subs: true, act: true, details: true, dCost: false, dTok: false, dCtx: true, dTime: false, dTools: false, dTasks: true }
+const OPEN0: Record<string, boolean> = {
+  metrics: true, deleg: true, subs: true, act: true, details: true, dCost: false, dTok: false, dCtx: true, dTime: false, dTools: false, dTasks: true,
+  wdGrid: true, wdMine: true, wdBuilt: false, wdProblems: true, wdManual: false,
+}
 const openSecs = atom({ plugin: 'crabbus', key: 'open' } as const, OPEN0)
 const filterAtom = atom({ plugin: 'crabbus', key: 'filter' } as const, 'all' as Filter)
 const modeAtom = atom({ plugin: 'crabbus', key: 'mode' } as const, 'cards' as 'cards' | 'rows')
 const tabAtom = atom({ plugin: 'crabbus', key: 'tab' } as const, 'all' as TxTab)
+const viewAtom = atom({ plugin: 'crabbus', key: 'view' } as const, 'agents' as 'agents' | 'wardrobe')
+// the wardrobe: the costume picked in the grid, and what a new rule looks at
+const wdSel = atom({ plugin: 'crabbus', key: 'wdSel' } as const, null as string | null)
+const wdPage = atom({ plugin: 'crabbus', key: 'wdPage' } as const, 0)
+const wdCrit = atom({ plugin: 'crabbus', key: 'wdCrit' } as const, 'description' as Criterion)
 
 // each agent's transcript, read at most once a second while its detail is shown
 const txCache = new Map<string, { at: number; lines: TxLine[] | null }>()
@@ -53,13 +68,29 @@ let frame = 0
 let band: { site: string; columns: number; maxRows: number } | undefined
 // the pane's site while it is drawn, and the crabs it shows (key -> agent id, '' = the master; mini = half size)
 let paneSite: string | undefined
-let paneCrabs: { key: string; id: string; i: number; mini: boolean; bg?: number }[] = []
+let paneCrabs: { key: string; id: string; i: number; mini: boolean; bg?: number; costume?: { id: string; isMaster: boolean; active: boolean } }[] = []
 // which view the pane shows: the list's text crabs move with each redraw, so it redraws more often
-let paneView: 'list' | 'detail' = 'list'
+let paneView: 'list' | 'detail' | 'wardrobe' = 'list'
 // set once per session: the pane opens by itself only the first time an agent starts
 let autoOpened = false
 // the designs in use: the built-in crew plus the user's files that passed the fit check
 let pack: Pack = BUILTIN
+// the design files the pack was built from: an edit is planned over them and shown before it is saved
+let designFiles: DesignFile[] = []
+// rules a save just added, by ruleKey, with when they appeared: the wardrobe marks them "new" for a while
+const fresh = new Map<string, number>()
+const FRESH_MS = 15000
+// the last "Tell CrabBus": when it was sent, and when Claude's save of the rules arrived
+let told: { at: number; done?: number } | undefined
+// what is being typed in each "Tell CrabBus" field: the field is one line, so a long message is shown whole under it
+const drafts = new Map<string, string>()
+const TOLD_WAIT_MS = 180000
+// past this many characters a Tell message no longer fits its one-line field
+const TELL_SHORT = 30
+
+const noteFresh = (prev: Pack, next: Pack, now: number): void => {
+  for (const k of newRules(prev, next)) fresh.set(k, now)
+}
 let packSig: string | undefined
 let designDir: string | undefined
 const MAX_DESIGN_BYTES = 512 * 1024
@@ -108,13 +139,69 @@ async function designsDir($: EngineInterface): Promise<string> {
   return designDir
 }
 
+/** One crab of a costume at full size: the wardrobe must show the crown, the hood, the beret. */
+const previewCanvas = (costume: string, mood: { mood: string; t: number }): ReturnType<typeof canvas> => {
+  const c = canvas(CARD_W, CARD_H)
+  if (pack.costumes[costume]) drawAgent(c, 0, 0, costume, mood.mood, mood.t, pack)
+  return c
+}
+
+// a chevron four rows tall, for turning the wardrobe's pages. Drawn with line glyphs, not half blocks: a Button
+// inverts under the pointer, and an inverted half block shows its two colors swapped
+const CHEVRON = { prev: [' ╱', '╱', '╲', ' ╲'], next: ['╲', ' ╲', ' ╱', '╱'] } as const
+
+/**
+ * A rules edit shows at once and is saved behind it. The edit is planned over the design files in
+ * memory (a refused one only says why); if the save fails the saved files are read back.
+ */
+async function editRules($: EngineInterface, op: RuleOp): Promise<void> {
+  const plan = planRuleEdit(designFiles, op, pack)
+  if (!plan.ok) {
+    void $.ui.toast(plan.error)
+    return
+  }
+  noteFresh(pack, plan.pack, await $.clock.now())
+  designFiles = plan.files
+  pack = plan.pack
+  $.ui.invalidate('ui.render')
+  try {
+    const dir = await designsDir($)
+    await $.fs.write(`${dir}/${plan.file}`, plan.text)
+    // the files on disk are what the pack was just built from: the next look must not check every costume again
+    packSig = designSig(await designEntries($, dir))
+  } catch (err) {
+    void $.ui.toast(TEXT.notSaved(plan.file, (err as Error).message))
+    await refreshDesigns($, true)
+  }
+}
+
+/**
+ * "Tell CrabBus": the person's words go to Claude as a prompt of this plugin's, with what is set now and how to
+ * change it; Claude edits the rules file with the design skill and the panel picks it up. Only on their submit.
+ */
+async function tellCrabBus($: EngineInterface, request: string, picked: string | undefined): Promise<void> {
+  if (!request.trim()) return
+  const [s, now, dir] = [await read($, bus), await $.clock.now(), await designsDir($)]
+  await $.prompt.submit({ text: tellPrompt(request, dir, picked, formatCostumeRulesText(pack, s, now)) })
+  told = { at: now }
+  $.ui.invalidate('ui.render')
+}
+
 /** Reloads the design files when any of them changed (name, size or time); a bad file never stops the others. */
+async function designEntries($: EngineInterface, dir: string): Promise<FsEntry[]> {
+  return (await $.fs.exists(dir)) ? (await $.fs.list(dir)).filter(x => x.kind === 'file' && x.name.endsWith('.json')).slice(0, 200) : []
+}
+
+/** What changes when any design file does: its name, size and time. */
+const designSig = (entries: readonly FsEntry[]): string => entries.map(x => `${x.name}:${x.size}:${x.mtimeMs}`).sort().join('|')
+
 async function refreshDesigns($: EngineInterface, force = false): Promise<boolean> {
   const dir = await designsDir($)
-  let entries: FsEntry[] = []
-  if (await $.fs.exists(dir)) entries = (await $.fs.list(dir)).filter(x => x.kind === 'file' && x.name.endsWith('.json')).slice(0, 200)
-  const sig = entries.map(x => `${x.name}:${x.size}:${x.mtimeMs}`).sort().join('|')
+  const entries = await designEntries($, dir)
+  const sig = designSig(entries)
   if (!force && sig === packSig) return false
+  const first = packSig === undefined
+  const prev = pack
   packSig = sig
   const files: DesignFile[] = []
   const tooBig: string[] = []
@@ -122,8 +209,15 @@ async function refreshDesigns($: EngineInterface, force = false): Promise<boolea
     if (x.size > MAX_DESIGN_BYTES) tooBig.push(x.name)
     else files.push({ file: x.name, text: String(await $.fs.read(`${dir}/${x.name}`)) })
   }
+  designFiles = files
   const next = files.length === 0 ? BUILTIN : loadPack(files, BUILTIN)
   pack = tooBig.length === 0 ? next : { ...next, problems: [...next.problems, ...tooBig.map(file => ({ file, msg: TEXT.fileTooLarge, fatal: true }))] }
+  if (!first) {
+    const now = await $.clock.now()
+    noteFresh(prev, pack, now)
+    // a save after a "Tell CrabBus" is Claude's answer to it
+    if (told && told.done === undefined && now >= told.at) told.done = now
+  }
   $.ui.invalidate('ui.render')
   return true
 }
@@ -134,9 +228,11 @@ const designSummary = (dir: string): string => {
   const costumes = Object.values(pack.costumes).map(d => `  ${d.id} «${d.name}»: ${d.pieces.join(', ')}${mine(d)}`)
   const actions = Object.values(pack.actions).filter(a => a.origin !== BUILTIN_ORIGIN).map(a => `  ${a.id} «${pack.labels[a.id] ?? a.label}» priority ${a.priority} [${a.origin}]`)
   const problems = pack.problems.map(x => `  ${x.fatal ? '✗' : '·'} ${x.file}${x.id ? ` (${x.id})` : ''}: ${x.msg}`)
+  const masterDesc = pack.master && pack.costumes[pack.master] ? `${pack.master} (custom)` : 'master (default)'
   return [
     `Costumes (${costumes.length}):`, ...costumes,
     ...(actions.length > 0 ? ['Custom actions:', ...actions] : []),
+    `Master: ${masterDesc}`,
     `In rotation: ${pack.active.filter(id => pack.costumes[id]).join(', ') || 'none'}`,
     ...(problems.length > 0 ? ['Problems:', ...problems] : ['No problems.']),
     `Folder: ${dir}/`,
@@ -206,8 +302,21 @@ async function migrateDesigns($: EngineInterface, dir: string, dryRun: boolean):
   return [head, ...report].join('\n')
 }
 
-async function runCostumeCommand($: EngineInterface, argsStr: string): Promise<{ text: string }> {
+async function runCostumeCommand($: EngineInterface, argsStr: string, frameMs: number, still: boolean): Promise<{ text: string }> {
+  if (!argsStr.trim()) {
+    autoOpened = true
+    await update($, viewAtom, () => 'wardrobe')
+    const r = await $.ui.open({ id: PANE, title: TEXT.paneTitle, focus: true, columns: PANE_COLUMNS })
+    ensureClock($, frameMs, still)
+    if (r.isPlaced) return { text: TEXT.wardrobeOpened }
+    const [s, now] = [await read($, bus), await $.clock.now()]
+    return { text: formatCostumeRulesText(pack, s, now) }
+  }
   const [sub = 'list', ...rest] = argsStr.trim().split(/\s+/).filter(Boolean)
+  if (sub === 'rules') {
+    const [s, now] = [await read($, bus), await $.clock.now()]
+    return { text: formatCostumeRulesText(pack, s, now) }
+  }
   const dir = await designsDir($)
   if (sub === 'folder' || sub === 'carpeta') return { text: TEXT.folderInfo(dir) }
   if (sub === 'reload' || sub === 'recargar') {
@@ -275,6 +384,11 @@ async function paint($: EngineInterface, still: boolean): Promise<void> {
   if (paneSite) {
     const site = paneSite
     for (const crab of paneCrabs) {
+      if (crab.costume) {
+        const k = crab.costume
+        if (pack.costumes[k.id]) await $.ui.blit({ requestId: site, key: crab.key, cells: cellsOf(previewCanvas(k.id, previewMood(k.isMaster, k.active, still ? 1 : phase(frame, crab.i))), crab.bg).cells })
+        continue
+      }
       const a = crab.id === '' ? undefined : s.agents[crab.id]
       if (crab.id !== '' && !a) continue
       const tick = still ? 1 : phase(frame, crab.i)
@@ -283,7 +397,7 @@ async function paint($: EngineInterface, still: boolean): Promise<void> {
         : (crab.mini ? masterMini : masterCard)(s, t, tick, pack, playing(MASTER))
       await $.ui.blit({ requestId: site, key: crab.key, cells: cellsOf(c, crab.bg).cells })
     }
-    if (frame % (paneView === 'list' && !still ? 3 : 6) === 0) $.ui.invalidate('ui.render')
+    if (frame % (paneView !== 'detail' && !still ? 3 : 6) === 0) $.ui.invalidate('ui.render')
   }
 }
 
@@ -377,13 +491,14 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'bus' }, async $ => {
     autoOpened = true
+    await update($, viewAtom, () => 'agents')
     const r = await $.ui.open({ id: PANE, title: TEXT.paneTitle, focus: true, columns: PANE_COLUMNS })
     ensureClock($, frameMs, still)
     return { text: r.isPlaced ? TEXT.paneOpened : TEXT.paneWaiting(r.reason ?? '') }
   })
 
-  on('command.run', { command: 'costume' }, ($, e) => runCostumeCommand($, e.args))
-  on('command.run', { command: 'disfraz' }, ($, e) => runCostumeCommand($, e.args))
+  on('command.run', { command: 'costume' }, ($, e) => runCostumeCommand($, e.args, frameMs, still))
+  on('command.run', { command: 'disfraz' }, ($, e) => runCostumeCommand($, e.args, frameMs, still))
 
   on('ui.close', { id: PANE }, ($, e, next) => {
     paneSite = undefined
@@ -396,8 +511,19 @@ export const register: Register = (on, options) => {
     const skip = e.workflow !== undefined || e.isTeammate === true
     const started = await next(skip ? e : { ...e, prompt: `${e.prompt}${BRIEF}` })
     if (started.deny === undefined && started.agentId) {
-      const info: SpawnInfo = { id: started.agentId, type: e.subagentType, description: e.description, ...(e.name ? { name: e.name } : {}), model: started.model, ...(e.permissionMode ? { mode: e.permissionMode } : {}) }
       await refreshDesigns($).catch(() => undefined)
+      const fullText = `${e.description} ${e.prompt}`
+      const matched = classifyDeterministic(pack.kinds, fullText)
+      const info: SpawnInfo = {
+        id: started.agentId,
+        type: e.subagentType,
+        description: e.description,
+        ...(e.name ? { name: e.name } : {}),
+        model: started.model,
+        ...(e.permissionMode ? { mode: e.permissionMode } : {}),
+        prompt: e.prompt,
+        ...(matched ? { kind: matched.kind } : {}),
+      }
       await record($, (s, t) => onSpawn(s, info, t, pack))
       ensureClock($, frameMs, still)
       await autoOpen($)
@@ -610,9 +736,10 @@ export const register: Register = (on, options) => {
   // cards or rows and live activity; or one agent in detail with its transcript, a message field and
   // its figures. The body scrolls, so every section is drawn and the person folds what they skip.
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const [s, t, sel, all, open0, filter, mode, tab] = [
+    const [s, t, sel, all, open0, filter, mode, tab, view] = [
       await read($, bus), await $.clock.now(), await read($, selected), await read($, showAll),
       await read($, openSecs), await read($, filterAtom), await read($, modeAtom), await read($, tabAtom),
+      await read($, viewAtom),
     ]
     if (e.surface !== 'terminal') {
       const { Text: Plain } = $.ui.resolve(e)
@@ -665,6 +792,16 @@ export const register: Register = (on, options) => {
         <Text wrap="truncate-end" color={hex(rightColor)}>{right}</Text>
       </Box>
     )
+    // the two views of the pane, as tabs on a row of their own at the top: a = agents, w = wardrobe
+    const viewTabs = (current: 'agents' | 'wardrobe') => (
+      <Box key="view-tabs" flexDirection="row" gap={1}>
+        {(['agents', 'wardrobe'] as const).map(v => (
+          <Button key={`view-${v}`} plain hotkey={v === 'agents' ? 'a' : 'w'} onPress={() => void update($, viewAtom, () => v).then(toTop)}>
+            <Text bold={v === current} color={hex(v === current ? C.text : C.dim)} {...(v === current ? { backgroundColor: hex(C.chip) } : {})}>{` ${v === 'agents' ? TEXT.tabAgents : TEXT.tabWardrobe} `}</Text>
+          </Button>
+        ))}
+      </Box>
+    )
     // the state chip never wraps: in a narrow panel it keeps only its glyph
     const compact = W < 50
     const chip = (st: UiStatus, short = compact) => (
@@ -691,7 +828,287 @@ export const register: Register = (on, options) => {
     const a = sel ? s.agents[sel] : undefined
     let body
 
-    if (a) {
+    if (view === 'wardrobe') {
+      // ---- the wardrobe: every costume walking, a page at a time; the one picked, and the user's own rules, can be changed
+      paneView = 'wardrobe'
+      const m = wardrobeModel(pack, s, t)
+      const [picked, crit] = [await read($, wdSel), await read($, wdCrit)]
+      const chosen = m.rotation.find(c => c.id === picked) ?? m.rotation.find(c => c.isMaster) ?? m.rotation[0]
+      const edit = (op: RuleOp) => () => void editRules($, op)
+      const mine = m.rules.filter(r => r.editable)
+      const builtin = m.rules.filter(r => !r.editable)
+      // full-size crabs, two rows to a page, as many to a row as fit between the side arrows
+      const tileW = CARD_W + 2
+      // room for the two chevrons (2 columns each) and a column between each and the cards
+      const perRow = Math.max(1, Math.floor((W - 6 + 1) / (tileW + 1)))
+      const size = perRow * 2
+      const pages = Math.max(1, Math.ceil(m.rotation.length / size))
+      const page = Math.min(Math.max(0, (await read($, wdPage)) ?? 0), pages - 1)
+      const shown = m.rotation.slice(page * size, page * size + size)
+      const goPage = (k: number) => () => void update($, wdPage, () => ((k % pages) + pages) % pages)
+      // picking a costume (in the grid, or from a rule) opens its card, on the page it is on
+      const pick = (id: string) => () => {
+        const at = m.rotation.findIndex(c => c.id === id)
+        void update($, wdSel, () => id)
+        if (at >= 0) void update($, wdPage, () => Math.floor(at / size))
+      }
+      // a card is 7 rows of crab, its name and its state, inside its border
+      const tileH = CARD_H / 2 + 2 + 2
+      const rowsShown = Math.max(1, Math.ceil(shown.length / perRow))
+      const gridH = rowsShown * tileH + (rowsShown - 1)
+      // one card: the crab is a Raster repainted in place by the clock (a Button would invert under the pointer and turn
+      // its half-block rows upside down); its name and state are the press targets, 1-9 too, and the card lights under the pointer
+      const tile = (c: WardrobeCostumeView, i: number, j: number) => {
+        const here = chosen?.id === c.id
+        const bg = here ? CARD_HOT : CARD_BG
+        const key = `wd-tile-${c.id}`
+        crabs.push({ key, id: '', i, mini: false, bg, costume: { id: c.id, isMaster: c.isMaster, active: c.active } })
+        const cells = cellsOf(previewCanvas(c.id, previewMood(c.isMaster, c.active, still ? 1 : phase(frame, i))), bg)
+        const state = c.active ? TEXT.tileOn : TEXT.tileOff
+        const worn = c.wornBy > 0 ? TEXT.worn(c.wornBy) : ''
+        const digit = j < 9 ? String(j + 1) : undefined
+        return (
+          <Box
+            key={`wd-cell-${c.id}`}
+            flexDirection="column"
+            width={tileW}
+            flexShrink={0}
+            borderStyle={here ? 'bold' : 'round'}
+            borderColor={hex(here ? C.text : c.active ? c.color : C.line2)}
+            backgroundColor={hex(bg)}
+            hover={{ borderColor: hex(C.mint) }}
+          >
+            <Raster key={key} columns={cells.columns} rows={cells.rows} cells={cells.cells} />
+            <Button key={`wd-pick-${c.id}`} plain {...(digit ? { hotkey: digit } : {})} onPress={pick(c.id)}>
+              <Text color={hex(C.yellow)}>{c.isMaster ? '★ ' : ''}</Text>
+              <Text bold={here} color={hex(c.active || here ? C.text : C.faint)}>{c.id}</Text>
+            </Button>
+            <Button key={`wd-pick-${c.id}-st`} plain onPress={pick(c.id)}>
+              <Text color={hex(c.active ? C.mint : C.faint)}>{state.padEnd(Math.max(state.length, CARD_W - worn.length))}</Text>
+              <Text color={hex(C.peach)}>{worn}</Text>
+            </Button>
+          </Box>
+        )
+      }
+      // each row starts at the left edge of the same 2-column box: centered one by one, a row whose blanks the
+      // terminal trims would shift
+      const arrow = (key: string, rows: readonly string[], k: number) => (
+        <Box key={key} flexDirection="column" justifyContent="center" alignItems="flex-start" width={2} height={gridH} flexShrink={0}>
+          {pages > 1 && rows.map((row, r) => (
+            <Button key={`${key}-${r}`} plain onPress={goPage(page + k)}><Text bold color={hex(C.mint)}>{row}</Text></Button>
+          ))}
+        </Box>
+      )
+      const pill = (key: string, lit: boolean, label: string, color: number, onPress: () => void) => (
+        <Button key={key} plain onPress={onPress}>
+          <Text bold={lit} color={hex(lit ? color : C.dim)} backgroundColor={hex(lit ? C.chip : CARD_BG)}>{label}</Text>
+        </Button>
+      )
+      const ctl = (key: string, label: string, color: number, onPress: () => void) => (
+        <Button key={key} plain onPress={onPress}><Text color={hex(color)}>{label}</Text></Button>
+      )
+      const help = (key: string, txt: string) => <Text key={key} wrap="wrap" color={hex(C.faint)}>{txt}</Text>
+      // a rule's conditions as colored tags (title, prompt, date...) followed by what each asks
+      const tags = (key: string, parts: readonly RulePart[], dim: boolean) => (
+        <Box key={key} flexDirection="row" flexWrap="wrap" columnGap={1}>
+          {parts.length === 0 && <Text color={hex(C.dim)}>{TEXT.always}</Text>}
+          {parts.map((p, n) => (
+            <Text key={`${key}-${n}`} wrap="truncate-end">
+              <Text color={hex(dim ? C.faint : CRIT_COLOR[p.tag])} backgroundColor={hex(C.chip)}>{` ${TEXT.critLabel[p.tag]} `}</Text>
+              <Text color={hex(dim ? C.faint : C.text)}>{` ${p.text}`}</Text>
+            </Text>
+          ))}
+        </Box>
+      )
+      // one of the user's rules: its tags, then (in the full list) the costume it gives, which opens that costume
+      const ruleRow = (where: string, r: WardrobeRuleView, withCostume: boolean) => {
+        const at = { file: r.origin, index: r.ruleIdx }
+        const k = where === 'l' ? '' : `${where}-`
+        return (
+          <Box key={`wd-${where}-rule-${r.origin}-${r.ruleIdx}`} flexDirection="column" marginTop={1}>
+            {t - (fresh.get(r.key) ?? -Infinity) < FRESH_MS && <Text bold color={hex(C.bg)} backgroundColor={hex(C.mint)}>{TEXT.freshBadge}</Text>}
+            {tags(`wd-${where}-tags-${r.ruleIdx}`, r.parts, false)}
+            <Box flexDirection="row" gap={1}>
+              {withCostume && ctl(`wd-goto-${r.ruleIdx}`, `→ ${r.costume}`, r.costumeColor, pick(r.costume))}
+              {ctl(`wd-${k}free-${r.ruleIdx}`, r.ifFree ? TEXT.oneAtATime : TEXT.canRepeat, r.ifFree ? C.yellow : C.dim, edit({ op: 'toggleIfFree', ...at }))}
+              <Box flexGrow={1} />
+              {withCostume && ctl(`wd-up-${r.ruleIdx}`, '▲', C.dim, edit({ op: 'moveRule', ...at, by: -1 }))}
+              {withCostume && ctl(`wd-down-${r.ruleIdx}`, '▼', C.dim, edit({ op: 'moveRule', ...at, by: 1 }))}
+              {ctl(`wd-${k}del-${r.ruleIdx}`, '✕', C.pink, edit({ op: 'removeRule', ...at }))}
+            </Box>
+          </Box>
+        )
+      }
+      // a built-in rule: the same tags, dim, fixed
+      const builtRow = (where: string, r: WardrobeRuleView, withCostume: boolean) => (
+        <Box key={`wd-${where}-built-${r.idx}`} flexDirection="column" marginTop={1}>
+          {tags(`wd-${where}-btags-${r.idx}`, r.parts, true)}
+          <Text wrap="truncate-end">
+            {withCostume ? <Text color={hex(r.costumeColor)}>{`→ ${r.costume} `}</Text> : ''}
+            <Text color={hex(C.faint)}>{`${TEXT.builtIn}${r.ifFree ? ` · ${TEXT.oneAtATime}` : ''}`}</Text>
+          </Text>
+        </Box>
+      )
+      const [critHelp, critExample] = TEXT.critHelp[crit]
+      // a Tell field: the terminal's field is one line, so once the message outgrows it the whole message fills the
+      // frame, wrapped, and the field stays at its foot as the line being typed on: one box that grows as it is written
+      const tellField = (id: string, placeholder: string, send: (text: string) => void, focus: boolean) => {
+        const draft = drafts.get(id) ?? ''
+        const long = draft.length > TELL_SHORT
+        return (
+          <Box key={`${id}-field`} flexDirection="column" borderStyle="round" borderColor={hex(C.lav)} backgroundColor={hex(C.chip)} paddingX={1}>
+            {long && <Text wrap="wrap" color={hex(C.text)}>{draft}</Text>}
+            <Box flexDirection="row">
+              <Text bold color={hex(C.lav)}>{long ? '↳ ' : '❯ '}</Text>
+              <Input
+                key={id}
+                {...(focus ? { autoFocus: true as const } : {})}
+                placeholder={placeholder}
+                submitLabel="tell"
+                onInput={(value: string) => {
+                  const before = drafts.get(id) ?? ''
+                  drafts.set(id, value)
+                  // redraw only while the message is long: a short one fits the field and needs no copy
+                  if (value.length > TELL_SHORT || before.length > TELL_SHORT) $.ui.invalidate('ui.render')
+                }}
+                onSubmit={(text: string) => {
+                  drafts.delete(id)
+                  send(text)
+                }}
+              />
+            </Box>
+          </Box>
+        )
+      }
+      const tellStatus = (key: string) =>
+        told && told.done === undefined && t - told.at < TOLD_WAIT_MS ? (
+          <Text key={key} wrap="wrap" color={hex(C.lav)}>{`${'·✢✳✶✻✽'[Math.floor(frame / 3) % 6] ?? '·'} ${TEXT.tellWorking}`}</Text>
+        ) : told?.done !== undefined && t - told.done < FRESH_MS ? (
+          <Text key={key} wrap="wrap" color={hex(C.mint)}>{TEXT.tellDone}</Text>
+        ) : null
+      body = (
+        <Box flexDirection="column">
+          {viewTabs('wardrobe')}
+          {rule('wd-r0')}
+
+          <Box key="wd-tell-box" flexDirection="column" borderStyle="round" borderColor={hex(C.lav)} backgroundColor={hex(CARD_BG)} paddingX={1}>
+            <Text bold color={hex(C.lav)}>{TEXT.tellTitle}</Text>
+            {help('wd-h-tell', TEXT.tellHelp)}
+            {tellField('wd-tell', TEXT.tellPlaceholder, text => void tellCrabBus($, text, chosen?.id), true)}
+            {help('wd-h-tell-field', TEXT.tellFieldHint)}
+            {tellStatus('wd-tell-st')}
+          </Box>
+
+          {section('wdGrid', TEXT.secCostumes, TEXT.wardrobeLegend)}
+          {open['wdGrid'] !== false && (
+            <Box flexDirection="column" alignItems="center" width="100%">
+              <Box flexDirection="row" alignItems="center" justifyContent="center" columnGap={1} width="100%">
+                {arrow('wd-prev', CHEVRON.prev, -1)}
+                <Box flexDirection="row" flexWrap="wrap" columnGap={1} rowGap={1} width={perRow * tileW + (perRow - 1)}>
+                  {shown.map((c, j) => tile(c, page * size + j, j))}
+                </Box>
+                {arrow('wd-next', CHEVRON.next, 1)}
+              </Box>
+              {pages > 1 && (
+                <Box flexDirection="row" justifyContent="center" gap={1}>
+                  {Array.from({ length: pages }, (_, k) => (
+                    <Button key={`wd-page-${k}`} plain onPress={goPage(k)}>
+                      <Text color={hex(k === page ? C.mint : C.faint)}>{k === page ? '●' : '○'}</Text>
+                    </Button>
+                  ))}
+                  <Text color={hex(C.faint)}>{TEXT.pageOf(page + 1, pages)}</Text>
+                </Box>
+              )}
+            </Box>
+          )}
+
+          {chosen && (() => {
+            // the picked costume's card: what it is, its two switches, every rule that dresses an agent in it, and a new one
+            const own = m.rules.filter(r => r.costume === chosen.id)
+            const ownMine = own.filter(r => r.editable)
+            const ownBuilt = own.filter(r => !r.editable)
+            return (
+              <Box key="wd-chosen" flexDirection="column" borderStyle="round" borderColor={hex(chosen.color)} backgroundColor={hex(CARD_BG)} paddingX={1} marginTop={1}>
+                <Text bold wrap="truncate-end" color={hex(chosen.color)}>{chosen.id}</Text>
+                <Text wrap="truncate-end" color={hex(C.dim)}>{TEXT.costumeFacts(chosen.name, chosen.piecesCount, chosen.rulesCount, chosen.wornBy)}</Text>
+                <Box flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1}>
+                  {pill(`wd-rot-${chosen.id}`, chosen.active, chosen.active ? TEXT.rotationOn : TEXT.rotationOff, C.mint, edit({ op: 'toggleActive', costume: chosen.id }))}
+                  {pill(`wd-master-${chosen.id}`, chosen.isMaster, chosen.isMaster ? TEXT.masterOn : TEXT.masterOff, C.yellow, edit({ op: 'setMaster', costume: chosen.id }))}
+                </Box>
+                {help('wd-h-pills', TEXT.pillsHelp)}
+
+                <Box marginTop={1}><Text bold color={hex(C.faint)}>{TEXT.wornWhen}</Text></Box>
+                {ownMine.map(r => ruleRow('c', r, false))}
+                {ownBuilt.map(r => builtRow('c', r, false))}
+                <Text wrap="wrap" color={hex(C.dim)}>
+                  {own.length === 0 ? (chosen.active ? TEXT.onlyRotation : TEXT.never) : chosen.active ? TEXT.alsoRotation : ''}
+                </Text>
+
+                <Box flexDirection="column" marginTop={1}>
+                  <Text bold color={hex(C.mint)}>{TEXT.addRuleFor(chosen.id)}</Text>
+                  {tellField('wd-tell-card', TEXT.tellCardPlaceholder(chosen.id), text => void tellCrabBus($, `${TEXT.tellCardPrefix(chosen.id)} ${text}`, chosen.id), false)}
+                  {tellStatus('wd-tell-card-st')}
+                  <Box marginTop={1}>
+                    <Button key="sec-wdManual" plain onPress={toggle('wdManual')}>
+                      <Text color={hex(C.dim)}>{open['wdManual'] === true ? TEXT.manualOpen : TEXT.manualClosed}</Text>
+                    </Button>
+                  </Box>
+                  {open['wdManual'] === true && (
+                    <Box flexDirection="column">
+                      <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
+                        {CRITERIA.map(k => (
+                          <Button key={`wd-crit-${k}`} plain onPress={() => void update($, wdCrit, () => k)}>
+                            <Text bold={k === crit} color={hex(k === crit ? CRIT_COLOR[k] : C.dim)} backgroundColor={hex(k === crit ? C.chip : CARD_BG)}>{` ${TEXT.critLabel[k]} `}</Text>
+                          </Button>
+                        ))}
+                      </Box>
+                      {help('wd-h-crit', critHelp)}
+                      <Box flexDirection="row">
+                        <Text bold color={hex(CRIT_COLOR[crit])}>❯ </Text>
+                        <Input
+                          key={`wd-new-${crit}`}
+                          placeholder={TEXT.examplePlaceholder(critExample)}
+                          submitLabel="add"
+                          onSubmit={(text: string) => void editRules($, { op: 'addRule', criterion: crit, pattern: text, costume: chosen.id })}
+                        />
+                      </Box>
+                    </Box>
+                  )}
+                </Box>
+              </Box>
+            )
+          })()}
+          {rule('wd-r1')}
+
+          {section('wdMine', TEXT.secMyRules, TEXT.countOf(mine.length))}
+          {open['wdMine'] !== false && (
+            <Box flexDirection="column">
+              {help('wd-h-mine', TEXT.myRulesHelp)}
+              {mine.length === 0 && <Text color={hex(C.dim)}>{TEXT.noMyRules}</Text>}
+              {mine.map(r => ruleRow('l', r, true))}
+            </Box>
+          )}
+          {rule('wd-r2')}
+
+          {section('wdBuilt', TEXT.secBuiltIn, TEXT.countOf(builtin.length))}
+          {open['wdBuilt'] === true && (
+            <Box flexDirection="column">
+              {help('wd-h-built', TEXT.builtinHelp)}
+              {builtin.map(r => builtRow('b', r, true))}
+            </Box>
+          )}
+
+          {m.problems.length > 0 && (
+            <Box flexDirection="column" marginTop={1}>
+              {section('wdProblems', TEXT.secProblems, TEXT.countOf(m.problems.length), C.pink)}
+              {open['wdProblems'] !== false && m.problems.map((p, i) => (
+                <Text key={`wd-prob-${i}`} wrap="wrap" color={hex(C.pink)}>{`${p.fatal ? '✗' : '·'} ${p.file}: ${p.msg}`}</Text>
+              ))}
+            </Box>
+          )}
+        </Box>
+      )
+    } else if (a) {
       // ---- one agent in detail
       paneView = 'detail'
       const d = detailModel(s, a, navList, t, pack)
@@ -917,6 +1334,8 @@ export const register: Register = (on, options) => {
       const mBg = cardBg(ms)
       body = (
         <Box flexDirection="column">
+          {viewTabs('agents')}
+          {rule('r0')}
           <Box flexDirection="row">
             <Text bold color={hex(C.master)}>{TEXT.panelTitle} </Text>
             <Box flexGrow={1} flexShrink={1} minWidth={0}><Text wrap="truncate-end" color={hex(C.dim)}>{`${TEXT.agentsCount(m.all.length + 1)} · updated ${new Date(t).toTimeString().slice(0, 8)}`}</Text></Box>
@@ -969,7 +1388,7 @@ export const register: Register = (on, options) => {
 
           <Box key="card-master" flexDirection="column" borderStyle="round" borderColor={hex(cardEdge(ms))} backgroundColor={hex(mBg)} paddingX={1} marginTop={1}>
             <Box flexDirection="row" gap={1}>
-              {crabButtons('p-master', '', 0, miniCards, mBg)}
+              {crab('p-master', '', 0, miniCards, mBg)}
               <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
                 <Box flexDirection="row">
                   <Box flexGrow={1}><Text bold color={hex(C.master)}>{TEXT.masterTitle}</Text></Box>
@@ -1030,7 +1449,7 @@ export const register: Register = (on, options) => {
                     >
                       {rows && n > 0 && <Text color={hex(C.line2)}>{'─'.repeat(Math.max(1, cardInner))}</Text>}
                       <Box flexDirection="row" gap={1}>
-                        {crabButtons(`cs-${v.id}`, v.id, v.idx, rows || miniCards, bg, select(v.id))}
+                        {crab(`cs-${v.id}`, v.id, v.idx, rows || miniCards, bg)}
                         {(() => {
                           const tw = Math.max(10, cardInner - (rows || miniCards ? CARD_W / 2 : CARD_W) - 1)
                           const short = rows || compact

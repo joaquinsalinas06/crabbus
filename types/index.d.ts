@@ -14,6 +14,7 @@ declare module 'claude-code' {
             model?: string
             costume: string
             nickname?: string
+            by?: string
             mode?: string
             status: 'running' | 'done' | 'failed' | 'killed'
             startedAt: number
@@ -76,6 +77,11 @@ declare module 'claude-code' {
       filter: 'all' | 'active' | 'attention' | 'done'
       mode: 'cards' | 'rows'
       tab: 'all' | 'tools' | 'reasoning'
+      view: 'agents' | 'wardrobe'
+      /** The costume picked in the wardrobe grid, and what a new rule looks at. */
+      wdSel: string | null
+      wdPage: number
+      wdCrit: 'description' | 'prompt' | 'type' | 'name' | 'mode' | 'model' | 'kind' | 'date'
     }
   }
 }

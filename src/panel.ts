@@ -4,9 +4,10 @@
 // percentage of the work. A subagent's cost is an estimate (price.ts) and is always marked "≈"; the
 // session total is the ledger's real figure.
 
+import { masterCostume } from './art.ts'
 import { BUILTIN } from './builtin.ts'
 import { uiStatus, type Activity, type AgentRec, type BusState, type Permission } from './model.ts'
-import { costumeColor, type Pack } from './pack.ts'
+import { BUILTIN_ORIGIN, costumeColor, type Pack, type Problem, type Rule } from './pack.ts'
 import { NO_USAGE, costOf, costParts, promptTokens, windowOf, type Usage } from './price.ts'
 import { paneList, shownName } from './scene.ts'
 import { C, ST, agoTxt, clock, ctxColor, dur, fc, fk, fit, limitName, prog, resetClock, spark, toolColor, untilTxt, type UiStatus } from './theme.ts'
@@ -430,4 +431,249 @@ export const fallbackLines = (a: AgentRec, name: string): TxLine[] => {
   const out: TxLine[] = [{ ...base, k: 'user', g: '›', gc: C.faint, head: `master → ${name}  `, hc: C.master, text: a.description }]
   for (const r of a.toolLog ?? []) out.push({ ...base, k: 'tool', g: '⏺', gc: r.ok === false ? C.pink : r.ok ? C.mint : C.yellow, head: r.tool, arg: r.arg ? `(${r.arg})` : '', body: [{ p: '⎿', t: r.ok === undefined ? 'running…' : r.ok ? `done in ${((r.ms ?? 0) / 1000).toFixed(1)}s` : 'failed', c: r.ok === false ? C.pink : C.dim }] })
   return out
+}
+
+// ---- Wardrobe view model (for /costume side panel and terminal)
+
+// the master's antics in the wardrobe, one after another; each is a short play
+const ANTICS = [['master.dance', 12], ['master.wave', 12], ['master.hop', 8]] as const
+
+/** What a costume's crab does in the wardrobe: the master clowns around, one in the rotation walks, one out of it sleeps. */
+export const previewMood = (isMaster: boolean, active: boolean, tick: number): { mood: string; t: number } => {
+  if (isMaster) {
+    const [mood, ticks] = ANTICS[Math.floor(tick / 24) % ANTICS.length] as (typeof ANTICS)[number]
+    return { mood, t: tick % 24 < ticks ? tick % 24 : ticks - 1 }
+  }
+  return { mood: active ? 'walk' : 'sleep', t: tick }
+}
+
+
+export type WardrobeAgent = {
+  id: string
+  name: string
+  role: string
+  costume: string
+  costumeColor: number
+  by: string
+}
+
+export type WardrobeRuleView = {
+  idx: number
+  origin: string
+  ruleIdx: number
+  conditionText: string
+  /** The same condition as a sentence, and as tagged parts for the panel. */
+  sentence: string
+  parts: RulePart[]
+  costume: string
+  costumeColor: number
+  ifFree: boolean
+  nickname?: string
+  /** The user's own rules can be edited; the built-in ones are fixed. */
+  editable: boolean
+  /** Its identity across reloads (see ruleKey). */
+  key: string
+}
+
+export type WardrobeCostumeView = {
+  id: string
+  name: string
+  color: number
+  active: boolean
+  isMaster: boolean
+  piecesCount: number
+  /** How many running agents wear it now, and how many rules give it. */
+  wornBy: number
+  rulesCount: number
+}
+
+export type WardrobeModel = {
+  wearing: WardrobeAgent[]
+  rules: WardrobeRuleView[]
+  rotation: WardrobeCostumeView[]
+  master: { id: string; custom: boolean; color: number }
+  problems: Problem[]
+}
+
+const FIELD = { type: 'agent type', name: 'agent name', description: 'task description', prompt: 'instructions', mode: 'permission mode', model: 'model' } as const
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const monthDayTxt = (n: number): string => `${MONTHS[Math.floor(n / 100) - 1] ?? '?'} ${n % 100}`
+
+/** A rule pattern in words: is “Plan”, ends with “fable”, has “bug” or “fix”; anything less plain is shown as written. */
+export const patternWords = (re: RegExp): string => {
+  let src = re.source
+  const start = src.startsWith('^')
+  if (start) src = src.slice(1)
+  const end = src.endsWith('$') && !src.endsWith('\\$')
+  if (end) src = src.slice(0, -1)
+  if (!/^[\w .-]+(\|[\w .-]+)*$/.test(src)) return `matches /${re.source}/`
+  const words = src.split('|').map(w => `“${w}”`).join(' or ')
+  return `${start && end ? 'is' : end ? 'ends with' : start ? 'starts with' : 'has'} ${words}`
+}
+
+/** What a rule looks at, as a sentence: "task description has “dino”", "date is Dec 1 to Dec 31". */
+export const ruleSentence = (cond: Rule['if']): string => {
+  const parts: string[] = []
+  for (const k of ['type', 'name', 'description', 'prompt', 'mode', 'model'] as const) {
+    const re = cond[k]
+    if (re) parts.push(`${FIELD[k]} ${patternWords(re)}`)
+  }
+  if (cond.kind) parts.push(`task kind is “${cond.kind}”`)
+  if (cond.from !== undefined && cond.to !== undefined) parts.push(`date is ${monthDayTxt(cond.from)} to ${monthDayTxt(cond.to)}`)
+  return parts.length > 0 ? parts.join(' and ') : 'always'
+}
+
+/** One condition of a rule: what it looks at (drawn as a colored tag) and what it asks of it. */
+export type RulePart = { tag: 'description' | 'prompt' | 'type' | 'name' | 'mode' | 'model' | 'kind' | 'date'; text: string }
+
+export const ruleParts = (cond: Rule['if']): RulePart[] => {
+  const out: RulePart[] = []
+  for (const k of ['description', 'prompt', 'type', 'name', 'mode', 'model'] as const) {
+    const re = cond[k]
+    if (re) out.push({ tag: k, text: patternWords(re) })
+  }
+  if (cond.kind) out.push({ tag: 'kind', text: `is “${cond.kind}”` })
+  if (cond.from !== undefined && cond.to !== undefined) out.push({ tag: 'date', text: `${monthDayTxt(cond.from)} → ${monthDayTxt(cond.to)}` })
+  return out
+}
+
+export function describeRuleCondition(cond: Rule['if']): string {
+  const parts: string[] = []
+  if (cond.type) parts.push(`type ~ ${cond.type}`)
+  if (cond.name) parts.push(`name ~ ${cond.name}`)
+  if (cond.description) parts.push(`desc ~ ${cond.description}`)
+  if (cond.model) parts.push(`model ~ ${cond.model}`)
+  if (cond.prompt) parts.push(`prompt ~ ${cond.prompt}`)
+  if (cond.mode) parts.push(`mode ~ ${cond.mode}`)
+  if (cond.kind) parts.push(`kind == "${cond.kind}"`)
+  if (cond.from !== undefined && cond.to !== undefined) {
+    const f = `${String(Math.floor(cond.from / 100)).padStart(2, '0')}-${String(cond.from % 100).padStart(2, '0')}`
+    const t = `${String(Math.floor(cond.to / 100)).padStart(2, '0')}-${String(cond.to % 100).padStart(2, '0')}`
+    parts.push(`dates ${f}..${t}`)
+  }
+  return parts.length > 0 ? parts.join(' and ') : 'always'
+}
+
+export const wardrobeModel = (pack: Pack, s: BusState, now: number): WardrobeModel => {
+  const running = Object.values(s.agents).filter(a => a.status === 'running')
+  const wearing: WardrobeAgent[] = running.map(a => ({
+    id: a.id,
+    name: shownName(a),
+    role: a.type,
+    costume: a.costume,
+    costumeColor: costumeColor(pack, a.costume),
+    by: a.by ?? 'rotation',
+  }))
+
+  const rules: WardrobeRuleView[] = pack.rules.map((r, i) => ({
+    idx: i + 1,
+    origin: r.origin,
+    ruleIdx: r.ruleIdx,
+    conditionText: describeRuleCondition(r.if),
+    sentence: ruleSentence(r.if),
+    parts: ruleParts(r.if),
+    costume: r.costume,
+    costumeColor: costumeColor(pack, r.costume),
+    ifFree: r.ifFree,
+    editable: r.origin !== BUILTIN_ORIGIN,
+    key: ruleKey(r),
+    ...(r.nickname ? { nickname: r.nickname } : {}),
+  }))
+
+  const masterId = masterCostume(pack)
+  const master = {
+    id: masterId,
+    custom: Boolean(pack.master && pack.costumes[pack.master]),
+    color: costumeColor(pack, masterId),
+  }
+
+  const activeSet = new Set(pack.active)
+  const rotation: WardrobeCostumeView[] = Object.values(pack.costumes).map(c => ({
+    id: c.id,
+    name: c.name,
+    color: costumeColor(pack, c.id),
+    active: activeSet.has(c.id),
+    isMaster: c.id === masterId,
+    piecesCount: c.pieces.length,
+    wornBy: running.filter(a => a.costume === c.id).length,
+    rulesCount: pack.rules.filter(r => r.costume === c.id).length,
+  }))
+
+  return {
+    wearing,
+    rules,
+    rotation,
+    master,
+    problems: pack.problems,
+  }
+}
+
+export function formatCostumeRulesText(pack: Pack, s: BusState, now: number): string {
+  const m = wardrobeModel(pack, s, now)
+  const lines: string[] = []
+  lines.push('WEARING NOW:')
+  if (m.wearing.length === 0) {
+    lines.push('  (no running subagents)')
+  } else {
+    for (const w of m.wearing) {
+      lines.push(`  ${w.name} (${w.role}): ${w.costume} [${w.by}]`)
+    }
+  }
+  lines.push('')
+  lines.push(`RULES IN ORDER (${m.rules.length}):`)
+  if (m.rules.length === 0) {
+    lines.push('  (no rules declared, using rotation)')
+  } else {
+    for (const r of m.rules) {
+      const free = r.ifFree ? ' [if free]' : ''
+      const nick = r.nickname ? ` (nickname: "${r.nickname}")` : ''
+      lines.push(`  ${r.idx}. [${r.origin} #${r.ruleIdx}] ${r.conditionText} -> ${r.costume}${free}${nick}`)
+    }
+  }
+  lines.push('')
+  lines.push(`MASTER: ${m.master.id}${m.master.custom ? ' (custom)' : ' (default)'}`)
+  lines.push(`ROTATION: ${m.rotation.filter(c => c.active).map(c => c.id).join(', ') || 'none'}`)
+  if (m.problems.length > 0) {
+    lines.push('')
+    lines.push(`PROBLEMS (${m.problems.length}):`)
+    for (const p of m.problems) lines.push(`  ${p.fatal ? '✗' : '·'} ${p.file}: ${p.msg}`)
+  }
+  return lines.join('\n')
+}
+
+
+/** Longest request the wardrobe's "Tell CrabBus" box passes on. */
+export const TELL_MAX = 500
+
+/**
+ * What "Tell CrabBus" hands Claude: the person's words, what it may do and how, and what is set now. It can make a
+ * costume, an action or a rule, look things up on the web, and read a picture the person names by its path; the
+ * panel picks the saved files up by itself.
+ */
+export const tellPrompt = (request: string, dir: string, picked: string | undefined, now: string): string =>
+  [
+    `From the CrabBus wardrobe panel, the person asks: "${request.trim().slice(0, TELL_MAX)}"`,
+    '',
+    'Do it with the crabbus:design skill: it covers new costumes and pieces, new actions and animations, and who ' +
+      'wears what (the rules, the rotation, the master).',
+    `- Save design files in ${dir}/. Rules go in the first file there with "type": "rules" (create rules.json if ` +
+      'there is none). Change only what they asked.',
+    '- If they name something you do not know well (a meme, a character, a trend, something recent), search the web ' +
+      'first and design from what you find.',
+    '- If they give the path of a picture, read it and design from it.',
+    '- Preview and fit-check a new costume or action with the skill before saving it.',
+    '- When you finish, say in a line or two what changed. The panel reloads the folder by itself.',
+    ...(picked ? ['', `The costume open in the panel: ${picked}.`] : []),
+    '',
+    'What is set now:',
+    now,
+  ].join('\n')
+
+/** A user rule's identity across reloads: its file, costume and conditions (not its place, which moves). */
+export const ruleKey = (r: Rule): string => `${r.origin}|${r.costume}|${describeRuleCondition(r.if)}|${r.ifFree}`
+
+/** The user rules `next` has that `prev` did not: what a save (by hand or by Claude) just added. */
+export const newRules = (prev: Pack, next: Pack): string[] => {
+  const before = new Set(prev.rules.filter(r => r.origin !== BUILTIN_ORIGIN).map(ruleKey))
+  return next.rules.filter(r => r.origin !== BUILTIN_ORIGIN).map(ruleKey).filter(k => !before.has(k))
 }
