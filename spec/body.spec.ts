@@ -148,6 +148,9 @@ test('bodies: selecting inheritance twice is a no-op and restoring a builtin rem
   if (!inherited.ok) return
   assert.equal(inherited.pack.costumes.other!.origin, BUILTIN.costumes.other!.origin)
   assert.deepEqual(JSON.parse(inherited.text), { type: 'bundle', items: [] })
+  const again = planBodyEdit(inherited.files, { op: 'setBody', costume: 'other', body: 'robot' }, inherited.pack)
+  assert.ok(again.ok)
+  if (again.ok) assert.equal(again.pack.costumes.other!.bodyId, 'robot')
 })
 
 test('bodies: a later rules item cannot silently override the requested default', () => {
@@ -167,4 +170,19 @@ test('bodies: legacy bundles remain editable without rewriting their sibling ite
   const edit = planBodyEdit([file], { op: 'setBody', costume: costume.id, body: 'crab' }, p)
   assert.ok(edit.ok)
   if (edit.ok) assert.equal(edit.pack.costumes[costume.id]!.bodyId, 'crab')
+})
+
+
+test('bodies: changing the fallback does not revive or re-reject an unrelated broken outfit', () => {
+  const broken = { type: 'bundle', items: [
+    { type: 'piece', id: 'floating', name: 'floating', slot: 'head', anchor: 'head', layers: [{ drawings: { a: ['X'] }, pos: [0, 0], palette: { X: '#ffffff' } }] },
+    { type: 'costume', id: 'broken-outfit', name: 'broken outfit', color: '#abcdef', pieces: ['floating'] },
+  ] }
+  const files = [{ file: 'broken-outfit.json', json: broken }]
+  const p = loadPack(files, BUILTIN)
+  assert.ok(p.problems.some(p => /floats/.test(p.msg)))
+  assert.equal(p.costumes['broken-outfit'], undefined)
+  const edit = planBodyEdit(files, { op: 'setDefaultBody', body: 'robot' }, p)
+  assert.ok(edit.ok)
+  if (edit.ok) assert.equal(edit.pack.defaultBody, 'robot')
 })

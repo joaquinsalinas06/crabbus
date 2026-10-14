@@ -98,7 +98,7 @@ export type Rule = {
   nickname?: string
 }
 
-export type Problem = { file: string; id?: string; msg: string; fatal: boolean }
+export type Problem = { costume?: string; body?: string; file: string; id?: string; msg: string; fatal: boolean }
 
 export type Pack = {
   bodies: Record<string, BodyDef>

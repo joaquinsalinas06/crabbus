@@ -34,7 +34,9 @@ export function planBodyEdit(files: readonly DesignFile[], op: BodyOp, current: 
       const user = costume.origin !== BUILTIN_ORIGIN
       file = user ? costume.origin : `body-${costume.id}.crab.json`
       const before = files.find(f => f.file === file)
-      if (!user && before) throw new Error(`"${file}" already exists; refusing to replace another design`)
+      const priorJson = before ? readJson(before) : undefined
+      const vacant = object(priorJson) && priorJson['type'] === 'bundle' && Array.isArray(priorJson['items']) && priorJson['items'].length === 0 && Object.keys(priorJson).every(k => k === 'type' || k === 'items')
+      if (!user && before && !vacant) throw new Error(`"${file}" already exists; refusing to replace another design`)
       raw = user && before ? readJson(before) : JSON.parse(JSON.stringify(costume.source))
       let found = false
       const replace = (v: unknown): unknown => {
@@ -63,7 +65,13 @@ export function planBodyEdit(files: readonly DesignFile[], op: BodyOp, current: 
     const pack = loadPack(next, BUILTIN)
     const key = (p: { file: string; id?: string; msg: string }) => `${p.file}:${p.id ?? ''}:${p.msg}`
     const prior = new Set(current.problems.filter(p => p.fatal).map(key))
-    const fatal = pack.problems.filter(p => p.fatal && !prior.has(key(p)))
+    const rejected = new Set(current.problems.filter(p => p.fatal && p.id).map(p => `${p.file}:${p.id}`))
+    const fatal = pack.problems.filter(p => {
+      if (!p.fatal || prior.has(key(p))) return false
+      if (p.costume && !current.costumes[p.costume] && (op.op !== 'setBody' || op.costume !== p.costume)) return false
+      if (p.id && rejected.has(`${p.file}:${p.id}`) && !current.costumes[p.id] && !current.pieces[p.id] && !current.actions[p.id] && !current.bodies[p.id]) return false
+      return true
+    })
     if (fatal.length) throw new Error(fatal.map(p => `${p.file}: ${p.msg}`).join('; '))
     if (op.op === 'setBody' && !pack.costumes[op.costume]) throw new Error('the edited costume did not pass validation')
     if (op.op === 'setDefaultBody' && pack.defaultBody !== op.body) throw new Error('another rules item overrides defaultBody; edit that source first')

@@ -170,12 +170,12 @@ export const checkPack = (pack: Pack, only?: ReadonlySet<string>): FitReport => 
   const badActions = new Set<string>()
   const badCostumes = new Set<string>()
   let context = ''
-  let currentCostume = '', referenceBody = true
+  let currentCostume = '', currentBody = '', referenceBody = true
   const said = new Set<string>()
   const report = (id: string, kind: string, msg: string, file: string, isAction = false) => {
     if (said.has(`${context}:${id}:${kind}`)) return
     said.add(`${context}:${id}:${kind}`)
-    problems.push({ file, id, msg: `${msg}${context}`, fatal: true })
+    problems.push({ file, id, costume: currentCostume, body: currentBody, msg: `${msg}${context}`, fatal: true })
     ;(isAction ? badActions : referenceBody ? badPieces : badCostumes).add(isAction || referenceBody ? id : currentCostume)
   }
   // every piece is checked inside each costume that wears it; a piece nobody wears, on its own
@@ -191,6 +191,7 @@ export const checkPack = (pack: Pack, only?: ReadonlySet<string>): FitReport => 
     const d = p.costumes[costume]
     if (!d || (only && !d.pieces.some(id => only.has(id)) && !only.has(costume))) continue
     currentCostume = costume
+    currentBody = effectiveBodyId(p, costume)
     const rig = p.bodies[effectiveBodyId(p, costume)]
     referenceBody = rig?.id === 'crab' && rig.origin === BUILTIN_ORIGIN
     context = ` [body "${effectiveBodyId(p, costume)}", costume "${costume}"]`
@@ -209,7 +210,7 @@ export const checkPack = (pack: Pack, only?: ReadonlySet<string>): FitReport => 
               said.add(key)
               badCostumes.add(costume)
               problems.push({ file: p.bodies[effectiveBodyId(p, costume)]?.origin ?? d.origin, id: costume,
-                msg: `body spills outside the card ${side} ${where(action, t)}${context}`, fatal: true })
+                costume, body: effectiveBodyId(p, costume), msg: `body spills outside the card ${side} ${where(action, t)}${context}`, fatal: true })
             }
           } else if (TAG.isEffect(tag)) {
             const id = TAG.effectId(tag)

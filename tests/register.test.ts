@@ -405,6 +405,8 @@ for (const surface of ['terminal', 'desktop'] as const) describe(`crabbus (${sur
     await ui.press({ key: 'wd-body-inherit-master' })
     expect(JSON.parse(files['body-master.crab.json'] ?? '{}').type).toBe('bundle')
     expect(await ui.find({ type: 'Text', text: /Body: robot \(rules.defaultBody\)/ })).toBeDefined()
+    await ui.press({ key: 'wd-body-master-crab' })
+    expect(JSON.parse(files['body-master.crab.json'] ?? '{}').body.id).toBe('crab')
     await ui.unmount()
   })
 
