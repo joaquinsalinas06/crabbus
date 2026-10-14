@@ -19,7 +19,7 @@ Of particular interest:
   regular expressions in `when` rules;
 - regular expressions in rules and kind definitions (`if`, `kinds.words`): patterns are compiled with safe guards and input prompts are truncated to 400 characters (`MAX_TEXT`) to prevent ReDoS;
 - kinds are scored locally on the first 400 characters of the description and prompt; the plugin makes no network request for them;
-- prompts: the wardrobe's "Tell CrabBus" box submits one prompt to Claude (framed as this plugin's) only when the person submits it; nothing else makes the plugin start a turn;
+- prompts: the wardrobe's "Tell CrabBus" box submits one prompt to Claude (framed as this plugin's) only when the person submits it; nothing else makes the plugin start a turn. What it carries from the design files (which may be shared by others) is fenced as data with an instruction not to follow it, stripped of control characters and fences, and capped at 4000 characters;
 - rule file modifications: wardrobe mutations validate the resulting pack in memory with `loadPack` before committing changes to disk;
 - text from agents (descriptions, commands, messages) that can inject terminal escape sequences
   into the panel;
