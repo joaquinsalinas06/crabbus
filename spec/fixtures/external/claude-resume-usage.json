@@ -1,0 +1,15 @@
+{
+  "source": "Real Claude 2.1.300 result usage from the initial profile task and a direct continuation of the same session",
+  "before": {
+    "input_tokens": 6,
+    "cache_creation_input_tokens": 31854,
+    "cache_read_input_tokens": 95928,
+    "output_tokens": 641
+  },
+  "after": {
+    "input_tokens": 4,
+    "cache_creation_input_tokens": 723,
+    "cache_read_input_tokens": 90119,
+    "output_tokens": 334
+  }
+}

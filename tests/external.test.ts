@@ -8,9 +8,9 @@ const call = ($: Engine, args: Record<string, unknown>) => $.tool.call({ tool: '
 const status = async ($: Engine) => String((await $.tool.call({ tool: 'mcp__crabbus__bus_status', tool_use_id: 'status' })).result)
 const result = (r: unknown) => String((r as { result?: unknown }).result)
 
-function host(on: On, controls: { silent?: boolean; noGit?: boolean; failNotice?: boolean; hold?: boolean } = {}) {
+function host(on: On, controls: { silent?: boolean; noGit?: boolean; failNotice?: boolean; hold?: boolean; noSession?: boolean; cumulative?: boolean; prepare?: boolean } = {}) {
   const clock = mock.clock(on)
-  const prompts: string[] = [], commands: string[][] = [], launches: string[][] = [], waiting: (() => void)[] = []
+  const prompts: string[] = [], commands: string[][] = [], launches: string[][] = [], waiting: (() => void)[] = [], preparations: (() => void)[] = []
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('session.cwd', () => ({ value: '/repo' }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
@@ -23,22 +23,25 @@ function host(on: On, controls: { silent?: boolean; noGit?: boolean; failNotice?
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', ($, e) => ({ text: e.answer }))
   on('prompt.submit', ($, e) => { if (controls.failNotice) { controls.failNotice = false; return { drop: 'retry delivery' } }; prompts.push(e.text); return { text: e.text } })
-  on('process.run', ($, e) => {
+  on('process.run', async ($, e) => {
     commands.push([...e.argv])
     const cmd = e.argv.join(' ')
+    if (controls.prepare && cmd.includes('--porcelain')) await new Promise<void>(resolve => preparations.push(resolve))
     return { value: { exitCode: controls.noGit && cmd.includes('--show-toplevel') ? 1 : 0, stdout: cmd.includes('--version') ? '1.0' : cmd.includes('--show-toplevel') ? '/repo\n' : cmd.includes('--porcelain') ? ' M pending.ts\0' : cmd.includes('--stat') ? ' changed.ts | 1 +\n' : cmd.includes('ls-files') ? 'new.ts\n' : '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('process.spawn', async function* ($, e, next) {
     launches.push([...e.argv])
+    if (controls.noSession) { await new Promise<void>(resolve => waiting.push(resolve)); return { value: { code: 1, signal: null } } }
     yield { stream: 'stdout' as const, text: '{"type":"thread.started","thread_id":"session-one"}\n' }
     if (controls.hold) await new Promise<void>((resolve, reject) => { waiting.push(resolve); next.signal.addEventListener('abort', () => reject(Error('probe aborted')), { once: true }) })
     if (controls.silent) { await new Promise<void>((resolve, reject) => next.signal.addEventListener('abort', () => reject(Error('probe aborted')), { once: true })); return { value: { code: 0, signal: null } } }
     yield { stream: 'stdout' as const, text: '{"type":"item.started","item":{"id":"cmd","type":"command_execution","command":"npm test"}}\n' }
     yield { stream: 'stdout' as const, text: '{"type":"item.completed","item":{"id":"cmd","type":"command_execution","command":"npm test","exit_code":0}}\n' }
-    yield { stream: 'stdout' as const, text: '{"type":"item.completed","item":{"id":"msg","type":"agent_message","text":"done"}}\n{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":25,"output_tokens":10}}\n' }
+    yield { stream: 'stdout' as const, text: '{"type":"item.completed","item":{"id":"msg","type":"agent_message","text":"done"}}\n' }
+    yield { stream: 'stdout' as const, text: JSON.stringify({ type: 'turn.completed', usage: { input_tokens: controls.cumulative ? launches.length * 100 : 100, cached_input_tokens: 25, output_tokens: controls.cumulative ? launches.length * 10 : 10 } }) + '\n' }
     return { value: { code: 0, signal: null } }
   })
-  return { clock, prompts, commands, launches, waiting }
+  return { clock, prompts, commands, launches, waiting, preparations }
 }
 
 async function completed($: Engine, n: number) {
@@ -164,6 +167,7 @@ for (const surface of ['terminal', 'desktop'] as const) test(`external ${surface
   await h.clock.advance(1)
   expect(h.prompts.length).toBe(1)
   expect(h.prompts[0]).toContain('Killed from the panel')
+  expect(await ui.find({ type: 'Text', text: /^0$/ })).toBeUndefined()
   expect(h.launches.length).toBe(1)
   await ui.unmount()
 })
@@ -184,4 +188,52 @@ test('native resume aliases the runtime loop ID to its original card', { options
   expect(s).toContain('1 agent(s)')
   expect(s).toContain('[stable]')
   expect(s).not.toContain('(not seen at spawn)')
+})
+
+
+test('external runner: no-session startup failure explicitly reports discarded accepted messages', { options: cfg() }, async ($, on) => {
+  const h = host(on, { noSession: true })
+  await $.session.start(start)
+  const id = result(await call($, { agent: 'coder', prompt: 'first', description: 'task', mode: 'read' })).split(' ')[0]!
+  expect(result(await call($, { agent: 'coder', to: id, prompt: 'queued' }))).toContain('accepted')
+  for (let i = 0; i < 30 && !h.waiting.length; i++) await status($)
+  h.waiting.shift()!()
+  for (let i = 0; i < 30 && !(await status($)).includes('— failed'); i++) await status($)
+  await h.clock.advance(1)
+  expect(h.prompts[0]).toContain('"discardedQueuedMessages":1')
+  expect(h.launches.length).toBe(1)
+})
+
+test('external runner: resumed cumulative usage is not counted twice and list prompts stay literal', { options: cfg() }, async ($, on) => {
+  const h = host(on, { cumulative: true })
+  await $.session.start(start)
+  const id = result(await call($, { agent: 'coder', prompt: '- First task', description: 'task', mode: 'read' })).split(' ')[0]!
+  await completed($, 1)
+  await call($, { agent: 'coder', to: id, prompt: '- Second task' })
+  await completed($, 1)
+  expect(await status($)).toContain('in 200, out 20')
+  expect(h.launches[0]!.at(-1)?.startsWith('CrabBus task:')).toBe(true)
+})
+
+test('external runner: a reserved new start cannot be displaced by an older continuation', { options: cfg({ maxConcurrent: 2 }) }, async ($, on) => {
+  const controls = { hold: false, prepare: false }
+  const h = host(on, controls)
+  await $.session.start(start)
+  const old = result(await call($, { agent: 'coder', prompt: 'old', description: 'old', mode: 'read' })).split(' ')[0]!
+  await completed($, 1)
+  controls.hold = true
+  await call($, { agent: 'coder', prompt: 'active', description: 'active', mode: 'read' })
+  controls.prepare = true
+  const starting = call($, { agent: 'coder', prompt: 'reserved new task', description: 'reserved' })
+  for (let i = 0; i < 30 && !h.preparations.length; i++) await status($)
+  await call($, { agent: 'coder', to: old, prompt: 'older continuation' })
+  expect(h.launches.length).toBe(2)
+  controls.prepare = false
+  h.preparations.shift()!()
+  await starting
+  for (let i = 0; i < 30 && h.launches.length < 3; i++) await status($)
+  expect(h.launches[2]!.at(-1)).toContain('reserved new task')
+  controls.hold = false
+  for (let i = 0; i < 30; i++) { h.waiting.splice(0).forEach(done => done()); await status($) }
+  await completed($, 3)
 })

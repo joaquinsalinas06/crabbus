@@ -95,3 +95,13 @@ The English scanner and Node spec glob already use explicit source targets. Thei
 of repository copies is retained and checked; TypeScript's explicit .crabbus exclusion also
 protects future broadening of its include paths. The nested-copy regression records existing
 scanner behavior rather than claiming a newly fixed scanner bug.
+
+## Continuation usage regression
+
+A real two-turn read probe retained the Codex session. Its terminal usage snapshots were
+28,701 input / 8 output and 68,218 input / 16 output. CrabBus reports 68,218 / 16
+after continuation, subtracting the previous snapshot before updating the ledger.
+Codex snapshots cover the session; Claude result usage covers the invocation. The reduced
+codex-resume-usage.json and claude-resume-usage.json fixtures record numeric telemetry
+for this distinction, rather than pretending to be complete raw event streams.
+Antigravity safe also completed two read turns with the same conversation identifier.

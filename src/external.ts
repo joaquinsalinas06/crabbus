@@ -47,7 +47,7 @@ export type ExtEvent =
   | { kind: 'tool'; id: string; phase: 'start' | 'end'; name: string; input: Record<string, unknown>; ok?: boolean }
   | { kind: 'text'; text: string }
   | { kind: 'plan'; items: string[]; done: number }
-  | { kind: 'usage'; usage: Usage }
+  | { kind: 'usage'; usage: Usage; scope: 'turn' | 'session' }
   | { kind: 'denied'; tool: string; arg: string }
   | { kind: 'done'; result: string; ok: boolean }
 
@@ -84,7 +84,7 @@ export function externalParser(cli: ExternalCli): (line: string) => ExtEvent[] {
     const usage = (u: unknown, codex = false) => {
       if (!obj(u)) return
       const cached = count(u[codex ? 'cached_input_tokens' : 'cache_read_tokens'] ?? u['cache_read_input_tokens'])
-      out.push({ kind: 'usage', usage: { input: Math.max(0, count(u['input_tokens']) - (codex ? cached : 0)), output: count(u['output_tokens']), cacheRead: cached, cacheWrite: count(u['cache_creation_input_tokens']) } })
+      out.push({ kind: 'usage', scope: codex ? 'session' : 'turn', usage: { input: Math.max(0, count(u['input_tokens']) - (codex ? cached : 0)), output: count(u['output_tokens']), cacheRead: cached, cacheWrite: count(u['cache_creation_input_tokens']) } })
     }
     if (cli === 'codex') {
       if (o['type'] === 'thread.started') session(o['thread_id'])
@@ -184,4 +184,12 @@ export function externalLines(emit: (line: string) => void, limit = 1048576, onD
     },
     end() { if (buffer && !dropping) emit(buffer); buffer = ''; dropping = false },
   }
+}
+
+/** Codex resume reports the thread's cumulative usage, not just this process turn. */
+export const externalUsageDelta = (current: Usage, previous?: Usage): Usage => {
+  const prior = previous && (Object.keys(current) as (keyof Usage)[]).every(k => current[k] >= previous[k])
+    ? previous : { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+  return { input: current.input - prior.input, output: current.output - prior.output,
+    cacheRead: current.cacheRead - prior.cacheRead, cacheWrite: current.cacheWrite - prior.cacheWrite }
 }

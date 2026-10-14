@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { externalConfig, externalArgv, externalParser, externalLines, AGY_AUTO_ERROR, type ExternalCli, type ExtEvent } from '../src/external.ts'
+import { externalConfig, externalUsageDelta, externalArgv, externalParser, externalLines, AGY_AUTO_ERROR, type ExternalCli, type ExtEvent } from '../src/external.ts'
 import { emptyState, onSpawn, onExternal, onResume, onUsage, onToolStart, onToolEnd } from '../src/model.ts'
 import { agentView, listModel, detailModel } from '../src/panel.ts'
 
@@ -91,4 +91,29 @@ test('external plans come only from explicit task events and completion is not c
   assert.deepEqual(c('{"type":"item.completed","item":{"id":"m","type":"agent_message","text":"I finished 3 stages"}}').filter(e => e.kind === 'plan'), [])
   c('{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":1}}')
   assert.deepEqual(c('{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":1}}'), [])
+})
+
+
+test('external Codex resume adds only the measured cumulative-usage delta', () => {
+  const snapshots = JSON.parse(readFileSync(new URL('./fixtures/external/codex-resume-usage.json', import.meta.url), 'utf8'))
+  const frame = (raw: { input_tokens: number; cached_input_tokens: number; output_tokens: number }) => ({
+    input: raw.input_tokens - raw.cached_input_tokens, cacheRead: raw.cached_input_tokens, output: raw.output_tokens, cacheWrite: 0,
+  })
+  const first = frame(snapshots.before), second = frame(snapshots.after)
+  const delta = externalUsageDelta(second, first)
+  assert.equal(delta.input + delta.cacheRead, 92523)
+  assert.equal(first.input + first.cacheRead + delta.input + delta.cacheRead, 256646)
+  assert.equal(first.output + delta.output, 757)
+  assert.deepEqual(externalUsageDelta(first), first)
+  assert.deepEqual(externalUsageDelta(first, second), first)
+})
+
+
+test('external Claude resume usage remains per invocation, unlike Codex snapshots', () => {
+  const snapshots = JSON.parse(readFileSync(new URL('./fixtures/external/claude-resume-usage.json', import.meta.url), 'utf8'))
+  const frames = [snapshots.before, snapshots.after].map(usage => externalParser('claude')(JSON.stringify({ type: 'result', subtype: 'success', session_id: 'same-session', usage })))
+  const first = frames[0]!.find(e => e.kind === 'usage'), next = frames[1]!.find(e => e.kind === 'usage')
+  assert.ok(first?.kind === 'usage' && next?.kind === 'usage')
+  assert.equal(first.scope, 'turn'); assert.equal(next.scope, 'turn')
+  assert.equal(first.usage.output + next.usage.output, 975)
 })
