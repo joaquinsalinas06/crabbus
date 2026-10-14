@@ -207,3 +207,9 @@ Returning a same-ID built-in override to inheritance removes the override defini
 it otherwise matches the built-in. A standalone override file becomes an empty bundle,
 so it no longer shadows future built-in updates. Unrelated rejected design files do not
 block valid body changes; a failure specific to another body removes only that outfit.
+
+Forced design refreshes still read the files, but reuse a validated pack when every file's
+content and order match. A successful body save publishes its already validated candidate
+before that readback, avoiding a second identical fit pass. Shipped body/outfit pairs use
+their exhaustive spec results only while body, costume, piece and action references remain
+exactly the built-in ones; user changes invalidate that shortcut.

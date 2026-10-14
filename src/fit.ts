@@ -12,6 +12,7 @@
 import { CARD_H, CARD_W } from './canvas.ts'
 import { BUILTIN_ORIGIN, compilePack, effectiveBodyId, planOf, renderAgent, without, type DesignFile, type Pack, type Problem, type CostumeDef, type Piece, type Action } from './pack.ts'
 import { TAG } from './rig.ts'
+import { BUILTIN } from './builtin.ts'
 
 const M = 8 // margin around the card, to see what spills
 const W = CARD_W + 2 * M
@@ -272,6 +273,11 @@ const bodyFits = new WeakMap<CostumeDef, WeakMap<object, BodyFit>>()
 export const bodyCompatibility = (pack: Pack, costume: string, body: string): Problem[] => {
   const d = pack.costumes[costume], b = pack.bodies[body]
   if (!d || !b || !Object.hasOwn(pack.bodies, body)) return [{ file: 'body', msg: `unknown costume "${costume}" or body "${body}"`, fatal: true }]
+  // Shipped body/outfit pairs are exhaustively checked by the golden/body specs.
+  if (d === BUILTIN.costumes[costume] && b === BUILTIN.bodies[body] &&
+    d.pieces.every(id => pack.pieces[id] === BUILTIN.pieces[id]) &&
+    Object.keys(pack.actions).length === Object.keys(BUILTIN.actions).length &&
+    Object.values(pack.actions).every(a => a === BUILTIN.actions[a.id])) return []
   let cache = bodyFits.get(d)
   if (!cache) { cache = new WeakMap(); bodyFits.set(d, cache) }
   const pieces = d.pieces.map(id => pack.pieces[id])

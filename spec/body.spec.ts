@@ -186,3 +186,12 @@ test('bodies: changing the fallback does not revive or re-reject an unrelated br
   assert.ok(edit.ok)
   if (edit.ok) assert.equal(edit.pack.defaultBody, 'robot')
 })
+
+test('bodies: the shipped-pair shortcut is invalidated by user actions', () => {
+  const walk = BUILTIN.actions.walk!.source as Record<string, unknown>
+  const p = compilePack([{ file: 'custom-action.json', json: { ...walk,
+    effect: [{ pos: [17, 0], drawings: { a: ['XX'] }, palette: { X: '#ffffff' } }],
+  } }], BUILTIN)
+  assert.equal(p.problems.length, 0)
+  assert.ok(bodyCompatibility(p, 'master', 'robot').some(p => /effect spills/.test(p.msg)))
+})

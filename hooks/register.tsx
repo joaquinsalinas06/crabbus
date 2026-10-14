@@ -273,6 +273,9 @@ function editBody($: EngineInterface, op: BodyOp): Promise<void> {
     if (plan.unchanged) return
     const dir = await designsDir($)
     await $.fs.write(`${dir}/${plan.file}`, plan.text)
+    designFiles = plan.files
+    pack = plan.pack
+    $.ui.invalidate('ui.render')
     await refreshDesigns($, true)
     void $.ui.toast(plan.summary)
   }).catch((e: unknown) => { void $.ui.toast(`Not changed: ${String(e)}`) })
@@ -293,6 +296,9 @@ async function refreshDesigns($: EngineInterface, force = false): Promise<boolea
     if (x.size > MAX_DESIGN_BYTES) tooBig.push(x.name)
     else files.push({ file: x.name, text: String(await $.fs.read(`${dir}/${x.name}`)) })
   }
+  // Forced reads still catch external edits; identical content keeps its already validated geometry.
+  if (!first && tooBig.length === 0 && !pack.problems.some(p => p.msg === TEXT.fileTooLarge) && files.length === designFiles.length &&
+    files.every((f, i) => f.file === designFiles[i]?.file && f.text === designFiles[i]?.text)) return false
   designFiles = files
   const next = files.length === 0 ? BUILTIN : loadPack(files, BUILTIN)
   pack = tooBig.length === 0 ? next : { ...next, problems: [...next.problems, ...tooBig.map(file => ({ file, msg: TEXT.fileTooLarge, fatal: true }))] }
