@@ -156,7 +156,8 @@ A plugin can't answer or close that dialog, and CrabBus doesn't pretend it can.
 
 ### 👗 A wardrobe you can talk to
 Every costume walking in a grid on terminal and Desktop, who wears what as
-readable rules, and a box where you ask for a new costume or a new rule in your own words. See [Customize your crew](#customize-your-crew).
+readable rules, and a box where you ask for a new costume, a new rule, or a whole new creature
+in your own words: crabs, robots and capybaras can share one crew. See [Customize your crew](#customize-your-crew).
 
 ## Customize your crew
 
@@ -177,6 +178,8 @@ your request to Claude, which does it with the bundled **`design` skill**:
 | *"in October everyone is a pumpkin"* | a rule with a date range |
 | *"make the dino the master"* · *"take the capybara out of the rotation"* | the master or the rotation changes |
 | *"give the pirate a bigger hat"* | an existing costume is redrawn |
+| *"a capybara with a red scarf"* | a skin on the built-in capybara body |
+| *"a new creature: a dog with floppy ears, not a costume"* | a new body is drawn from references, plus its first skin |
 
 - If you name something Claude does not know well (a meme, a character, something recent), it
   searches the web first and designs from what it finds.
@@ -258,6 +261,35 @@ It handles more than costumes:
   by its words (`"planning": ["plan", "design"]`) so several rules can share it.
 - **Labels:** rename any state (`"thinking": "… pondering"`).
 
+### More than crabs: creatures
+
+A costume (a **skin**) is drawn on a **body**. CrabBus ships three bodies, the `crab`, a `robot`
+and a front-facing chibi `capybara`, and you can add your own: a dog, a giraffe, a penguin.
+
+- **Each skin picks its body** with `"body": { "id": "capybara" }`. A skin without one is a crab,
+  so one crew mixes species by which skin each agent wears. There is no crew-wide default.
+- **Each body has as many skins as you like**: pieces can be drawn for one body
+  (`"body": "capybara"` on the piece) and are refused on the others with the reason.
+- **A body is JSON too**: its layers, a base `color` and a fixed `palette` (nose, ears, paws),
+  two eyes that blink and look, anchors where hats and held props go, and legs that walk.
+- **Bodies animate on their own**: layers take `frames` and per-action `anim`, so the capybara
+  twitches its ears, sniffs while reading, chews while writing and droops its ears asleep.
+- **In the wardrobe**, the picked skin's card lists every body; one that does not fit shows why
+  and cannot be chosen.
+
+To get a new creature, ask for it in so many words (*"a new creature: …"*, *"not a costume"*):
+otherwise a request becomes a skin on an existing body. The skill then looks at references of
+the animal, draws it front-facing to match the crew, gives it life, checks every action and
+shows you the preview before installing. The [design skill](skills/design/SKILL.md) holds the
+body contract and the lessons on what makes a skin look good.
+
+```bash
+/costume export capybara                       # a body to start from or share
+node tools/preview.ts --design dog.json --scale 12 --out dog.png      # a body, bare
+node tools/preview.ts --design dog.json dog-skin.json --costume dog-skin --out skin.png
+node tools/preview.ts --design pirate.json --body capybara --out try.png   # try a skin on another body
+```
+
 ### Examples
 
 Every crab here was made by asking the skill, the last two through **Tell CrabBus**, and all of
@@ -272,6 +304,7 @@ them ship in [`examples/`](examples):
 | [`christmas.crab.json`](examples/christmas.crab.json) | santa hat and scarf | costume |
 | [`pumpkin.crab.json`](examples/pumpkin.crab.json) | a full jack-o'-lantern mask whose carved face flickers like a candle, and goes out when it sleeps | costume |
 | [`peru.crab.json`](examples/peru.crab.json) | a Peru football fan: colorful chullo, white jersey with the red sash, flag face paint, a waving mini flag | costume |
+| [`capybara-scarf.crab.json`](examples/capybara-scarf.crab.json) | the capybara body with a red wool scarf whose end sways as it walks | costume (capybara) |
 | [`commit.crab.json`](examples/commit.crab.json) | confetti and a jump whenever an agent runs `git commit` | action |
 | [`rules.json`](examples/rules.json) | who wears what: by agent description (`dino`, `fisher`…) and everyone in Christmas from Dec 1–31 | rules |
 
@@ -281,7 +314,7 @@ them ship in [`examples/`](examples):
 
 ### Under the hood
 
-- Every costume, piece, action and rule is **JSON data**, never code, kept in `~/.claude/crabbus/`
+- Every body, costume, piece, action and rule is **JSON data**, never code, kept in `~/.claude/crabbus/`
   (`/costume folder` prints the exact path).
 - A **fit validator** draws each design in every action and frame, and rejects it if a piece
   floats, overflows the card, hides the eyes by accident or lacks contrast on dark or light
@@ -291,7 +324,7 @@ them ship in [`examples/`](examples):
   is installed.
 
 Built-in crew: astronaut, detective, engineer, chef, pilot, pirate and propeller cap, plus the
-crowned master.
+crowned master. Built-in bodies: crab, robot and capybara.
 
 ## Requirements
 
@@ -443,18 +476,3 @@ DockCrab / Clawdy. Every sprite was redrawn by hand for the terminal. See
 [MIT](LICENSE) © [joaquinsalinas06](https://github.com/joaquinsalinas06)
 
 <div align="center"><br><img src="assets/logo.png" width="72" alt="CrabBus logo"></div>
-
-
-### Custom creatures
-
-CrabBus includes `crab`, `robot` and `capybara` bodies (the capybara is a front-facing
-chibi with its own colors, muzzle and paws). Each skin names its body (`"body": { "id": "capybara" }`);
-a skin without one is a crab, so one crew can mix crabs, robots and capybaras. The wardrobe
-changes the picked skin's body; incompatible choices show their fit reason and cannot be
-selected. Built-in costume changes create user overrides. Pieces can be drawn for one body
-(`"body": "capybara"` on the piece).
-
-Export a body with `/costume export capybara`. Body-only JSON can be previewed with
-`node tools/preview.ts --design capybara.json --out capybara.png`. To try an outfit on
-another body, add `--body robot`. The [design skill](skills/design/SKILL.md) documents
-layers, limb states, eyes and anchors and the preview/fit/install workflow.

@@ -1,0 +1,67 @@
+{
+ "type": "bundle",
+ "items": [
+  {
+   "type": "piece",
+   "id": "capybara-scarf",
+   "name": "wool scarf",
+   "body": "capybara",
+   "slot": "neck",
+   "anchor": "body",
+   "layers": [
+    {
+     "pos": [
+      4,
+      8
+     ],
+     "drawings": {
+      "a": [
+       "rrrrrrrrrr",
+       "......rr..",
+       "......cc..",
+       "......rr.."
+      ],
+      "b": [
+       "rrrrrrrrrr",
+       ".......rr.",
+       ".......cc.",
+       ".......rr."
+      ]
+     },
+     "palette": {
+      "r": "#c0392b",
+      "c": "#efe2c2"
+     },
+     "anim": {
+      "walk": [
+       {
+        "steps": [
+         {
+          "d": "a"
+         },
+         {
+          "d": "b"
+         }
+        ],
+        "every": 2
+       }
+      ],
+      "sleep": []
+     }
+    }
+   ]
+  },
+  {
+   "type": "costume",
+   "id": "capybara-scarf",
+   "name": "capybara with scarf",
+   "color": "#c98a55",
+   "body": {
+    "id": "capybara"
+   },
+   "pieces": [
+    "capybara-scarf"
+   ]
+  }
+ ]
+}
