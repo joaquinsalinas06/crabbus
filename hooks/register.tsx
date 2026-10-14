@@ -19,7 +19,7 @@ import { BUILTIN_ORIGIN, bundle, type DesignFile, type Pack } from '../src/pack.
 import { FILTERS, TABS, detailModel, fallbackLines, filterTab, formatCostumeRulesText, listModel, newRules, previewMood, tellPrompt, panelAgents, transcriptLines, wardrobeModel, type AgentView, type Filter, type TxLine, type TxTab, type RulePart, type WardrobeCostumeView, type WardrobeRuleView } from '../src/panel.ts'
 import { agentCard, agentLabel, compose, isActive, layout, lineParts, masterCard, masterLabel, masterMini, miniCard, paneList, phase, type Label } from '../src/scene.ts'
 import { TEXT } from '../src/text.ts'
-import { C, CARD_BG, ORDER, ST, cardBg, cardEdge, fit, meter, type UiStatus } from '../src/theme.ts'
+import { C, CARD_BG, ORDER, ST, cardBg, cardEdge, fit, hex, meter, setTruecolor, type UiStatus } from '../src/theme.ts'
 
 // the picked card in the wardrobe, a step lighter than the others
 const CARD_HOT = cardBg('done', true)
@@ -103,7 +103,6 @@ let dir: Director = emptyDirector()
 const playing = (id: string) => playOf(dir, id, frame)
 
 const input = (e: unknown): Record<string, unknown> => (typeof e === 'object' && e !== null ? (e as Record<string, unknown>) : {})
-const hex = (n: number): string => `#${n.toString(16).padStart(6, '0')}`
 
 /** Raster uses cells; Desktop Client requests the same engine frames without rebuilding the panel. */
 function renderCanvas($: EngineInterface, e: RenderInput, c: Canvas, key: string, alt: string, bg?: number, ms?: number): RenderElement {
@@ -524,6 +523,9 @@ export const register: Register = (on, options) => {
   const bandMode = opts['band'] === 'stage' || opts['band'] === 'off' ? opts['band'] : 'auto'
 
   on('session.start', async ($, e, next) => {
+    // a terminal that does not declare truecolor gets the 256-color palette chosen here, not Claude Code's rounding
+    const colorterm = (await $.env.get('COLORTERM').catch(() => undefined)) ?? ''
+    setTruecolor(colorterm === 'truecolor' || colorterm === '24bit')
     await $.command.register({ name: 'bus', description: TEXT.busCmdDesc })
     await $.command.register({ name: 'costume', description: TEXT.costumeCmdDesc })
     await $.command.register({ name: 'disfraz', description: TEXT.legacyCostumeCmdDesc })

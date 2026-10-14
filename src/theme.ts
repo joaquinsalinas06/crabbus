@@ -23,7 +23,40 @@ export const C = {
   master: 0xff8a6b,
 } as const
 
-export const hex = (n: number): string => `#${n.toString(16).padStart(6, '0')}`
+// A terminal without truecolor draws 256 colors: the 6x6x6 cube and the gray ramp. Claude Code rounds each
+// hex to whichever of them it likes, which is how the design's orange came out pink. Here each color picks
+// its nearest entry itself, and the hex it hands on is that entry's exact value, which maps back to it.
+const CUBE_STEPS = [0, 95, 135, 175, 215, 255]
+const ANSI256: readonly number[] = [
+  ...CUBE_STEPS.flatMap(r => CUBE_STEPS.flatMap(g => CUBE_STEPS.map(b => (r << 16) | (g << 8) | b))),
+  ...Array.from({ length: 24 }, (_, i) => { const v = 8 + i * 10; return (v << 16) | (v << 8) | v }),
+]
+
+let truecolor = true
+const snapped = new Map<number, number>()
+
+/** Called once at start: `false` when the terminal does not declare truecolor (no COLORTERM=truecolor|24bit). */
+export const setTruecolor = (on: boolean): void => {
+  truecolor = on
+  snapped.clear()
+}
+
+/** The 256-color entry nearest to `n`, by squared distance in RGB. */
+export const nearest256 = (n: number): number => {
+  const hit = snapped.get(n)
+  if (hit !== undefined) return hit
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255
+  let best = ANSI256[0] as number, bestD = Infinity
+  for (const c of ANSI256) {
+    const dr = ((c >> 16) & 255) - r, dg = ((c >> 8) & 255) - g, db = (c & 255) - b
+    const d = dr * dr + dg * dg + db * db
+    if (d < bestD) { bestD = d; best = c }
+  }
+  snapped.set(n, best)
+  return best
+}
+
+export const hex = (n: number): string => `#${(truecolor ? n : nearest256(n)).toString(16).padStart(6, '0')}`
 
 /** What the panel calls an agent's state (derived from recorded facts in model.ts `uiStatus`). */
 export type UiStatus = 'working' | 'thinking' | 'waiting' | 'blocked' | 'done' | 'failed'
