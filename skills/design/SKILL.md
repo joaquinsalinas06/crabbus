@@ -1,6 +1,6 @@
 ---
 name: design
-description: Design or customize the appearance of CrabBus crabs (the animated subagents). Use when asked for a hat, outfit, clothing, mustache, glasses, or new item ("quiero un gorrito de capibara", "ponle un saco", "un gorro para el agente", "ropa", "vestir", "diseñar", "give it a coat"), a costume or theme (Christmas, holiday, "disfraz de navidad"), a new action or animation ("cuando haga git commit que salte", "que baile al terminar", "jump when git commit runs"), custom text or names, costume assignment rules ("quién lleva qué disfraz"), or sharing designs (/costume export, import, /disfraz).
+description: Design or customize the appearance of CrabBus crabs (the animated subagents). Use when asked for a hat, outfit, clothing, mustache, glasses, or new item ("quiero un gorrito de capibara", "ponle un saco", "un gorro para el agente", "ropa", "vestir", "diseñar", "give it a coat"), a costume or theme (Christmas, holiday, "disfraz de navidad"), a new action or animation ("cuando haga git commit que salte", "que baile al terminar", "jump when git commit runs"), custom text or names, costume assignment rules ("quién lleva qué disfraz", "que el que planifica lleve el detective", "cambia el master", "saca al dino de la rotación", "who wears what"), or sharing designs (/costume export, import, /disfraz).
 ---
 
 # Designing CrabBus Crabs
@@ -142,18 +142,74 @@ To customize a built-in action, redefine its ID (`walk`, `reading`, `writing`, `
 ```json
 {
   "type": "rules",
+  "master": "fable",
   "active": ["fable", "heavy", "careful", "medium", "light", "explore", "french"],
+  "kinds": {
+    "planning": {
+      "words": ["\\bplan(ning)?\\b", "\\bdesign\\b"],
+      "description": "Planning and design tasks"
+    }
+  },
   "rules": [
-    { "if": { "from": "12-01", "to": "12-31" }, "costume": "french" },
-    { "if": { "name": "^tester$" }, "costume": "medium", "nickname": "Chef Tester", "ifFree": true }
+    { "if": { "kind": "planning", "from": "12-01", "to": "12-31" }, "costume": "french" },
+    { "if": { "name": "^tester$", "prompt": "test", "mode": "^acceptEdits$" }, "costume": "medium", "nickname": "Chef Tester", "ifFree": true }
   ],
   "labels": { "thinking": "… pondering" }
 }
 ```
-- Rules evaluate in order (user rules before built-in defaults). Criteria: `type`, `name`, `description`, `model` (regex patterns) and `from`/`to` ("MM-DD"). `ifFree`: only assign if not currently in use by an active agent.
+- Rules evaluate in order (user rules before built-in defaults). Criteria: `type`, `name`, `description`, `model`, `prompt` (first 400 characters), `mode` (permission mode), `kind` (matched kind category), and `from`/`to` ("MM-DD"). `ifFree`: only assign if not currently in use by an active agent.
+- `master`: optional costume ID for the session's master crab (defaults to `"master"`, then `"other"`).
+- `kinds`: keyword-based task classifiers scoring the first 400 characters of `description` + `prompt` against safe regex `words`. The kind with the most matching words wins; a tie goes to the kind id first in alphabetical order. Deterministic, no network.
 - If no rules match, rotation cycles through `active` costumes.
 - `nickname`: overrides displayed name. `labels`: overrides action labels by ID.
 - Single rules file is recommended; multiple files merge together.
+
+### Editing who wears what (when the person asks)
+
+People ask in their own words, in any language: "the one who plans wears the detective", "make the dino the master", "take the capybara out of the rotation", "everyone in Christmas clothes in December". Turn that into an edit of **their rules file**, and nothing else.
+
+1. **Read what is there first.** Run `/costume rules`: it prints the agents running now with the rule that dressed each one (`my-rules.json #2`, `(built-in) #6`, `rotation`), every rule in order, the master and the rotation. `/costume folder` prints the folder.
+2. **Edit the existing rules file**: the first file in the folder with `"type": "rules"` (often `rules.json`, or a name in the person's language). Create `rules.json` only when there is none. Keep every rule, kind and label you were not asked to change, and keep the JSON valid.
+3. **Map the request to the smallest change:**
+
+| They ask | Change |
+|---|---|
+| "X is the master" / "cambia el master" | `"master": "X"` (remove the key to go back to the default crown) |
+| "take X out of / put X in the rotation" | edit `"active"`; when the file has none, start from the rotation `/costume rules` shows |
+| "agents that plan wear X" | a rule on `type` (`"^Plan$"`), on `description` or `prompt` words, or on a `kind` |
+| "the reviewer wears X" | a rule on `name` (`"^reviewer$"`) or `description` (`"review"`) |
+| "only one at a time" | `"ifFree": true` on that rule |
+| "in December" | `"from": "12-01", "to": "12-31"` together |
+
+4. **Write patterns as plain words.** Every pattern ignores case. `|` is "or", `^` "starts with", `$` "ends with": `"bug|fix|error"`, `"^Explore$"`. Patterns that could make Claude Code hang (nested repeats like `(a+)+`) are refused with the reason. Words in the person's language are fine in patterns and kinds, since task titles come in that language: add both, as in `"plan|planif"`.
+5. **Order matters.** The first rule that fits gives the costume, and the person's rules are tried before the built-in ones. Put a specific rule above a general one.
+6. **Check it.** The folder reloads in about two seconds. Run `/costume rules` again and confirm the rule is listed as you meant, and `/costume list` shows no problems. The person can also see and change all this in the side panel: the `wardrobe` tab (key `w`).
+
+What each criterion looks at:
+
+| Criterion | What it reads | Example |
+|---|---|---|
+| `description` | the short task title Claude gives the agent | `"bug|fix"` |
+| `type` | the agent type: `Explore`, `Plan`, `general-purpose`, a plugin agent | `"^Plan$"` |
+| `name` | the name the agent was given, when it has one | `"^reviewer$"` |
+| `prompt` | the first 400 characters of the agent's instructions | `"refactor|migrate"` |
+| `mode` | its permission mode: `default`, `plan`, `acceptEdits`, `auto` | `"^plan$"` |
+| `model` | the model it runs on | `"haiku"` |
+| `kind` | a kind defined under `kinds` in the same file | `"planning"` |
+| `from` / `to` | today's date, `"MM-DD"`, both together | `"12-01"` / `"12-31"` |
+
+A rule for "agents that plan wear the detective", for task titles in English or in a language that writes "planif...":
+
+```
+{ "if": { "description": "plan|planif|design" }, "costume": "heavy" }
+```
+
+The same with a kind, so several rules can share the word list:
+
+```
+"kinds": { "planning": { "words": ["plan", "planif", "design"], "description": "planning and design" } },
+"rules": [{ "if": { "kind": "planning" }, "costume": "heavy", "ifFree": true }]
+```
 
 ## Good Design Principles
 

@@ -1,0 +1,84 @@
+{
+  "type": "bundle",
+  "items": [
+    {
+      "type": "piece",
+      "id": "pumpkin-mask",
+      "name": "halloween pumpkin mask",
+      "slot": "head",
+      "anchor": "head",
+      "occupies": [
+        "face.eyes",
+        "face.mouth"
+      ],
+      "coversEyes": true,
+      "layers": [
+        {
+          "pos": [
+            0,
+            1
+          ],
+          "drawings": {
+            "a": [
+              "........ggll......",
+              "...oooodggdoooo...",
+              "...oooodoodoooo...",
+              "..ooooodoodooooo..",
+              "..ooooodoodooooo..",
+              "..oooyodoodoyooo..",
+              "..ooyyydoodyyyoo..",
+              "..ooooodyydooooo..",
+              "..ooyoyyyyyyoyoo..",
+              "...ooyyoyyoyyoo...",
+              "....dooooooood...."
+            ]
+          },
+          "palette": {
+            "o": "#e8761c",
+            "d": "#b8520f",
+            "g": "#3f6b2a",
+            "l": "#6aa84f",
+            "y": "#ffd23f"
+          },
+          "anim": {
+            "*": [
+              {
+                "period": 12,
+                "at": {
+                  "0": {
+                    "palette": {
+                      "y": "#ffb627"
+                    }
+                  },
+                  "6": {
+                    "palette": {
+                      "y": "#ffe066"
+                    }
+                  }
+                }
+              }
+            ],
+            "sleep": [
+              {
+                "fixed": {
+                  "palette": {
+                    "y": "#7a5212"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "costume",
+      "id": "pumpkin",
+      "name": "halloween pumpkin",
+      "color": "#e8761c",
+      "pieces": [
+        "pumpkin-mask"
+      ]
+    }
+  ]
+}

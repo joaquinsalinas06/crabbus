@@ -1,0 +1,153 @@
+{
+  "type": "bundle",
+  "items": [
+    {
+      "type": "piece",
+      "id": "chullo",
+      "name": "colorful chullo",
+      "slot": "head",
+      "anchor": "head",
+      "layers": [
+        {
+          "pos": [
+            0,
+            1
+          ],
+          "drawings": {
+            "a": [
+              "........yy........",
+              ".......rrrr.......",
+              "......bwbwbw......",
+              ".....gggggggg.....",
+              "...rwrwrwrwrwr....",
+              "...b..........b..."
+            ]
+          },
+          "palette": {
+            "y": "#f2c230",
+            "r": "#d91e2b",
+            "b": "#2f6fd6",
+            "w": "#f4f3ee",
+            "g": "#2fa35a"
+          }
+        }
+      ]
+    },
+    {
+      "type": "piece",
+      "id": "peru-jersey",
+      "name": "peru football jersey",
+      "slot": "torso",
+      "anchor": "body",
+      "layers": [
+        {
+          "pos": [
+            0,
+            10
+          ],
+          "drawings": {
+            "a": [
+              "...gwwwwwwrrwwg...",
+              "....gwwwrrwwwg...."
+            ]
+          },
+          "palette": {
+            "w": "#f4f3ee",
+            "r": "#d91023",
+            "g": "#a9a79d"
+          }
+        }
+      ]
+    },
+    {
+      "type": "piece",
+      "id": "peru-cheeks",
+      "name": "peru flag face paint",
+      "slot": "face.mouth",
+      "anchor": "face",
+      "layers": [
+        {
+          "pos": [
+            3,
+            7
+          ],
+          "drawings": {
+            "a": [
+              "r..........r",
+              "w..........w",
+              "r..........r"
+            ]
+          },
+          "palette": {
+            "r": "#d91023",
+            "w": "#f4f3ee"
+          }
+        }
+      ]
+    },
+    {
+      "type": "piece",
+      "id": "peru-flag",
+      "name": "mini peru flag",
+      "slot": "hand.right",
+      "anchor": "claw.right",
+      "layers": [
+        {
+          "pos": [
+            13,
+            3
+          ],
+          "drawings": {
+            "a": [
+              "rwrp",
+              "rwrp",
+              "...p",
+              "...p",
+              "...p"
+            ],
+            "b": [
+              ".wrp",
+              "rwrp",
+              "r..p",
+              "...p",
+              "...p"
+            ]
+          },
+          "palette": {
+            "r": "#d91023",
+            "w": "#f4f3ee",
+            "p": "#8a8f98"
+          },
+          "anim": {
+            "*": [
+              {
+                "every": 2,
+                "steps": [
+                  {
+                    "d": "a"
+                  },
+                  {
+                    "d": "b"
+                  }
+                ]
+              }
+            ],
+            "sleep": []
+          }
+        }
+      ]
+    },
+    {
+      "type": "costume",
+      "id": "peru",
+      "name": "peruvian fan",
+      "color": "#d91023",
+      "pieces": [
+        "chullo",
+        "peru-jersey",
+        "peru-cheeks",
+        "peru-flag"
+      ]
+    }
+  ]
+}

@@ -17,6 +17,10 @@ Of particular interest:
 
 - design files (`.crab.json`) that hang, crash or break out of the validator, for example with
   regular expressions in `when` rules;
+- regular expressions in rules and kind definitions (`if`, `kinds.words`): patterns are compiled with safe guards and input prompts are truncated to 400 characters (`MAX_TEXT`) to prevent ReDoS;
+- kinds are scored locally on the first 400 characters of the description and prompt; the plugin makes no network request for them;
+- prompts: the wardrobe's "Tell CrabBus" box submits one prompt to Claude (framed as this plugin's) only when the person submits it; nothing else makes the plugin start a turn;
+- rule file modifications: wardrobe mutations validate the resulting pack in memory with `loadPack` before committing changes to disk;
 - text from agents (descriptions, commands, messages) that can inject terminal escape sequences
   into the panel;
 - anything that makes the plugin read or write outside its designs folder.
