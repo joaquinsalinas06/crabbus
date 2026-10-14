@@ -7,7 +7,7 @@
 import { masterCostume } from './art.ts'
 import { BUILTIN } from './builtin.ts'
 import { uiStatus, type Activity, type AgentRec, type BusState, type Permission } from './model.ts'
-import { BUILTIN_ORIGIN, costumeColor, type Pack, type Problem, type Rule } from './pack.ts'
+import { BUILTIN_ORIGIN, costumeColor, effectiveBodyId, type Pack, type Problem, type Rule } from './pack.ts'
 import { NO_USAGE, costOf, costParts, promptTokens, windowOf, type Usage } from './price.ts'
 import { paneList, shownName } from './scene.ts'
 import { C, ST, agoTxt, clock, ctxColor, dur, fc, fk, fit, limitName, prog, resetClock, spark, toolColor, untilTxt, type UiStatus } from './theme.ts'
@@ -476,6 +476,9 @@ export type WardrobeRuleView = {
 }
 
 export type WardrobeCostumeView = {
+  bodyId: string
+  bodySource: string
+  explicitBody?: string
   id: string
   name: string
   color: number
@@ -589,6 +592,9 @@ export const wardrobeModel = (pack: Pack, s: BusState, now: number): WardrobeMod
 
   const activeSet = new Set(pack.active)
   const rotation: WardrobeCostumeView[] = Object.values(pack.costumes).map(c => ({
+    bodyId: effectiveBodyId(pack, c.id),
+    bodySource: c.bodyId ? 'costume' : pack.defaultBody ? 'rules.defaultBody' : 'built-in fallback',
+    ...(c.bodyId ? { explicitBody: c.bodyId } : {}),
     id: c.id,
     name: c.name,
     color: costumeColor(pack, c.id),

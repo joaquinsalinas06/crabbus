@@ -3,6 +3,8 @@
 // Observe-only on every path it shares with Claude Code: it never denies, rewrites or answers another
 // tool's call, never changes a message, and any failure of its own falls through to `next(e)`.
 // It also adds one thing the model reads: BRIEF, appended to each spawned subagent's prompt (see README).
+import { planBodyEdit, type BodyOp } from '../src/body-edit.ts'
+import { bodyCompatibility, defaultBodyCompatibility } from '../src/fit.ts'
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, FsEntry, Register, RenderChildren, RenderElement, RenderInput, RenderNode } from 'claude-code'
 
@@ -260,6 +262,21 @@ async function designEntries($: EngineInterface, dir: string): Promise<FsEntry[]
 
 /** What changes when any design file does: its name, size and time. */
 const designSig = (entries: readonly FsEntry[]): string => entries.map(x => `${x.name}:${x.size}:${x.mtimeMs}`).sort().join('|')
+
+// Serializing body saves makes each choice validate against the last file version read.
+let bodySave: Promise<void> = Promise.resolve()
+function editBody($: EngineInterface, op: BodyOp): Promise<void> {
+  bodySave = bodySave.then(async () => {
+    await refreshDesigns($, true)
+    const plan = planBodyEdit(designFiles, op, pack)
+    if (!plan.ok) { void $.ui.toast(plan.error); return }
+    const dir = await designsDir($)
+    await $.fs.write(`${dir}/${plan.file}`, plan.text)
+    await refreshDesigns($, true)
+    void $.ui.toast(plan.summary)
+  }).catch((e: unknown) => { void $.ui.toast(`Not changed: ${String(e)}`) })
+  return bodySave
+}
 
 async function refreshDesigns($: EngineInterface, force = false): Promise<boolean> {
   const dir = await designsDir($)
@@ -974,6 +991,18 @@ export const register: Register = (on, options) => {
       const [picked, crit] = [await read($, wdSel), await read($, wdCrit)]
       const chosen = m.rotation.find(c => c.id === picked) ?? m.rotation.find(c => c.isMaster) ?? m.rotation[0]
       const edit = (op: RuleOp) => () => void editRules($, op)
+      const bodyChoice = (key: string, label: string, selected: boolean, problems: readonly { msg: string }[], op: BodyOp) => problems.length
+        ? <Text key={key} color={hex(C.faint)} wrap="wrap">{`${label} — unavailable: ${problems[0]?.msg}`}</Text>
+        : <Button key={key} plain={desktop ? undefined : true} onPress={() => editBody($, op)}>{`${selected ? '● ' : '○ '}${label}`}</Button>
+      const bodyChoices = (costume?: WardrobeCostumeView) => <Box flexDirection="column" marginTop={1}>
+        <Text bold color={hex(C.text)}>{costume ? `Body: ${costume.bodyId} (${costume.bodySource})` : `Default body: ${pack.defaultBody ?? 'crab'} (fallback only)`}</Text>
+        {costume
+          ? bodyChoice(`wd-body-inherit-${costume.id}`, 'Inherit default body', !costume.explicitBody, bodyCompatibility(pack, costume.id, pack.defaultBody ?? 'crab'), { op: 'setBody', costume: costume.id })
+          : bodyChoice('wd-body-default-inherit', 'Use built-in fallback (crab)', !pack.defaultBody, defaultBodyCompatibility(pack, 'crab'), { op: 'setDefaultBody' })}
+        {Object.values(pack.bodies).map(b => costume
+          ? bodyChoice(`wd-body-${costume.id}-${b.id}`, b.name, costume.explicitBody === b.id, bodyCompatibility(pack, costume.id, b.id), { op: 'setBody', costume: costume.id, body: b.id })
+          : bodyChoice(`wd-body-default-${b.id}`, b.name, pack.defaultBody === b.id, defaultBodyCompatibility(pack, b.id), { op: 'setDefaultBody', body: b.id }))}
+      </Box>
       const mine = m.rules.filter(r => r.editable)
       const builtin = m.rules.filter(r => !r.editable)
       // full-size crabs, two rows to a page, as many to a row as fit between the side arrows
@@ -1182,6 +1211,8 @@ export const register: Register = (on, options) => {
             </Box>
           )}
 
+          {bodyChoices()}
+
           {chosen && (() => {
             // the picked costume's card: what it is, its two switches, every rule that dresses an agent in it, and a new one
             const own = m.rules.filter(r => r.costume === chosen.id)
@@ -1190,6 +1221,7 @@ export const register: Register = (on, options) => {
             return (
               <Box key="wd-chosen" flexDirection="column" borderStyle="round" borderColor={hex(chosen.color)} backgroundColor={hex(CARD_BG)} paddingX={1} marginTop={1}>
                 <Text bold wrap="truncate-end" color={hex(chosen.color)}>{chosen.id}</Text>
+                {bodyChoices(chosen)}
                 <Text wrap="truncate-end" color={hex(C.dim)}>{TEXT.costumeFacts(chosen.name, chosen.piecesCount, chosen.rulesCount, chosen.wornBy)}</Text>
                 <Box flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1}>
                   {pill(`wd-rot-${chosen.id}`, chosen.active, chosen.active ? TEXT.rotationOn : TEXT.rotationOff, C.mint, edit({ op: 'toggleActive', costume: chosen.id }))}

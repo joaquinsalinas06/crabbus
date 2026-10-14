@@ -385,6 +385,68 @@ const RULES = {
   ],
 }
 
-export const BUILTIN_ITEMS: readonly unknown[] = [...ACTIONS, ...PIECES, ...COSTUMES, RULES]
+export const BODIES: readonly unknown[] = [
+  {
+    type: 'body', id: 'crab', name: 'Crab',
+    layers: [
+      {"x": 4, "y": 12, "motion": "ground", "rows": ["S"], "when": {"legs": 0, "kick": ["none", "right"]}},
+      {"x": 4, "y": 12, "motion": "ground", "rows": ["S", "S"], "when": {"legs": 1, "kick": ["none", "right"]}},
+      {"x": 2, "y": 11, "motion": "ground", "rows": ["S..", ".SS"], "when": {"kick": ["left"]}},
+      {"x": 6, "y": 12, "motion": "ground", "rows": ["S", "S"], "when": {"legs": 0}},
+      {"x": 6, "y": 12, "motion": "ground", "rows": ["S"], "when": {"legs": 1}},
+      {"x": 11, "y": 12, "motion": "ground", "rows": ["S"], "when": {"legs": 0}},
+      {"x": 11, "y": 12, "motion": "ground", "rows": ["S", "S"], "when": {"legs": 1}},
+      {"x": 13, "y": 12, "motion": "ground", "rows": ["S", "S"], "when": {"legs": 0, "kick": ["none", "left"]}},
+      {"x": 13, "y": 12, "motion": "ground", "rows": ["S"], "when": {"legs": 1, "kick": ["none", "left"]}},
+      {"x": 13, "y": 11, "motion": "ground", "rows": ["..S", "SS."], "when": {"kick": ["right"]}},
+      {"x": 0, "y": 6, "motion": "body", "rows": ["....HHHHHHHHHH....", "...HBBBBBBBBBBS...", "...BBBBBBBBBBBS...", "...BBBBBBBBBBBS...", "...BBBBBBBBBBBS...", "....SSSSSSSSSS...."]},
+      {"x": 1, "y": 8, "motion": "claw.left", "rows": ["HH", "BB"]},
+      {"x": 15, "y": 8, "motion": "claw.right", "rows": ["HH", "BB"]},
+    ],
+    anchors: {
+      "card": {"x": 0, "y": 0, "motion": "card"},
+      "body": {"x": 9, "y": 8, "motion": "body"},
+      "head": {"x": 9, "y": 6, "motion": "body"},
+      "face": {"x": 9, "y": 9, "motion": "body"},
+      "claw.left": {"x": 2, "y": 9, "motion": "claw.left"},
+      "claw.right": {"x": 16, "y": 9, "motion": "claw.right"},
+      "ground": {"x": 9, "y": 13, "motion": "ground"},
+    },
+    armLift: {"left": -2, "right": -2},
+    eyes: {"points": [{"x": 5, "y": 8}, {"x": 12, "y": 8}], "height": 2, "blink": 1, "look": 1},
+  },
+  {
+    type: 'body', id: 'robot', name: 'Robot',
+    layers: [
+      {"x": 4, "y": 12, "motion": "ground", "rows": ["S"], "when": {"legs": 0, "kick": ["none", "right"]}},
+      {"x": 4, "y": 12, "motion": "ground", "rows": ["S", "S"], "when": {"legs": 1, "kick": ["none", "right"]}},
+      {"x": 2, "y": 11, "motion": "ground", "rows": ["S..", ".SS"], "when": {"kick": ["left"]}},
+      {"x": 6, "y": 12, "motion": "ground", "rows": ["S", "S"], "when": {"legs": 0}},
+      {"x": 6, "y": 12, "motion": "ground", "rows": ["S"], "when": {"legs": 1}},
+      {"x": 11, "y": 12, "motion": "ground", "rows": ["S"], "when": {"legs": 0}},
+      {"x": 11, "y": 12, "motion": "ground", "rows": ["S", "S"], "when": {"legs": 1}},
+      {"x": 13, "y": 12, "motion": "ground", "rows": ["S", "S"], "when": {"legs": 0, "kick": ["none", "left"]}},
+      {"x": 13, "y": 12, "motion": "ground", "rows": ["S"], "when": {"legs": 1, "kick": ["none", "left"]}},
+      {"x": 13, "y": 11, "motion": "ground", "rows": ["..S", "SS."], "when": {"kick": ["right"]}},
+      {"x": 8, "y": 4, "motion": "body", "rows": ["HH", "SS"]},
+      {"x": 0, "y": 6, "motion": "body", "rows": ["...HHHHHHHHHHHH...", "...HBBBBBBBBBBS...", "...HBBBBBBBBBBS...", "...HBBBBBBBBBBS...", "...HBBSSSSBBBBS...", "...SSSSSSSSSSSS..."]},
+      {"x": 1, "y": 8, "motion": "claw.left", "rows": ["HH", "BS", "SS"]},
+      {"x": 15, "y": 8, "motion": "claw.right", "rows": ["HH", "SB", "SS"]},
+    ],
+    anchors: {
+      "card": {"x": 0, "y": 0, "motion": "card"},
+      "body": {"x": 9, "y": 8, "motion": "body"},
+      "head": {"x": 9, "y": 6, "motion": "body"},
+      "face": {"x": 9, "y": 9, "motion": "body"},
+      "claw.left": {"x": 2, "y": 9, "motion": "claw.left"},
+      "claw.right": {"x": 16, "y": 9, "motion": "claw.right"},
+      "ground": {"x": 9, "y": 13, "motion": "ground"},
+    },
+    armLift: {"left": -2, "right": -2},
+    eyes: {"points": [{"x": 5, "y": 8}, {"x": 12, "y": 8}], "height": 2, "blink": 1, "look": 1},
+  },
+]
+
+export const BUILTIN_ITEMS: readonly unknown[] = [...BODIES, ...ACTIONS, ...PIECES, ...COSTUMES, RULES]
 
 export const BUILTIN: Pack = compilePack([{ file: BUILTIN_ORIGIN, json: { type: 'bundle', items: BUILTIN_ITEMS } }])

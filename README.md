@@ -443,3 +443,16 @@ DockCrab / Clawdy. Every sprite was redrawn by hand for the terminal. See
 [MIT](LICENSE) © [joaquinsalinas06](https://github.com/joaquinsalinas06)
 
 <div align="center"><br><img src="assets/logo.png" width="72" alt="CrabBus logo"></div>
+
+
+### Custom creatures
+
+CrabBus includes `crab` and `robot` bodies. The wardrobe selects a global fallback and an
+optional body per costume; incompatible choices show their fit reason and cannot be selected.
+Built-in costume changes create user overrides. A costume's `body.id` wins over
+`rules.defaultBody`, which wins over `crab`; existing body color fields keep working.
+
+Export a body with `/costume export robot`. Body-only JSON can be previewed with
+`node tools/preview.ts --design robot.json --out robot.png`. To preview an outfit with a
+fallback species, add `--body robot`. The [design skill](skills/design/SKILL.md) documents
+layers, limb states, eyes and anchors and the preview/fit/install workflow.

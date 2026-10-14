@@ -148,6 +148,8 @@ export const withRules = (current: Pack, files: readonly DesignFile[], touched: 
     rulesFiles: [...BUILTIN.rulesFiles],
     problems: [],
   }
+  delete base.defaultBody
+  if (BUILTIN.defaultBody) base.defaultBody = BUILTIN.defaultBody
   if (BUILTIN.master) base.master = BUILTIN.master
   else delete base.master
   const p = compilePack(fed, base)

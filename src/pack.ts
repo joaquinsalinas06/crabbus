@@ -12,7 +12,7 @@
 
 import { CARD_H, CARD_W, mix, stampWith, type Put } from './canvas.ts'
 import { normalizeDesignJson, resolveLegacyId } from './legacy.ts'
-import { ANCHORS, BODY_LAYER, CLAY, EYES, FACE_SLOTS, POSE0, SLOTS, TAG, anchorOffset, drawCrab, mirrorPose, slotLayer, turned, type Anchor, type Pose, type Slot } from './rig.ts'
+import { ANCHORS, BODY_LAYER, CLAY, EYES, FACE_SLOTS, POSE0, SLOTS, TAG, bodyAnchorOffset, drawBody, mirrorPose, slotLayer, turned, type Anchor, type Pose, type Slot, type BodyDef, type BodyMotion } from './rig.ts'
 import type { KindDef } from './kinds.ts'
 
 export const SLEEP_MS = 8000 // after this, a finished agent dozes instead of cheering
@@ -53,7 +53,7 @@ export type Piece = {
   source: unknown
 }
 
-export type CostumeDef = { id: string; name: string; color: number; body: number; eyes?: number; pieces: string[]; origin: string; source: unknown }
+export type CostumeDef = { id: string; name: string; color: number; body: number; bodyId?: string; eyes?: number; pieces: string[]; origin: string; source: unknown }
 
 export const STATES = ['asleep', 'finished', 'failed', 'blocked', 'error', 'thinking', 'working', 'starting', 'tests-ok'] as const
 export type State = (typeof STATES)[number]
@@ -101,6 +101,8 @@ export type Rule = {
 export type Problem = { file: string; id?: string; msg: string; fatal: boolean }
 
 export type Pack = {
+  bodies: Record<string, BodyDef>
+  defaultBody?: string
   pieces: Record<string, Piece>
   costumes: Record<string, CostumeDef>
   actions: Record<string, Action>
@@ -116,6 +118,7 @@ export type Pack = {
 }
 
 export const emptyPack = (): Pack => ({
+  bodies: {},
   pieces: {},
   costumes: {},
   actions: {},
@@ -411,6 +414,63 @@ const parsePiece = (o: Obj, origin: string): Piece => {
   }
 }
 
+const BODY_MOTIONS: readonly BodyMotion[] = ['body', 'ground', 'claw.left', 'claw.right', 'card']
+const parseBody = (o: Obj, origin: string): BodyDef => {
+  const coord = (v: unknown, where: string): { x: number; y: number } => {
+    if (!isObj(v)) return bad(`${where}: must be an { x, y } object`)
+    const x = num(v, 'x', 0, CARD_W - 1)
+    const y = num(v, 'y', 0, CARD_H - 1)
+    if (!Number.isInteger(x) || !Number.isInteger(y)) bad(`${where}: coordinates must be integers`)
+    return { x, y }
+  }
+  const motion = (v: unknown): BodyMotion => {
+    if (!BODY_MOTIONS.includes(v as BodyMotion)) return bad('body motion must be body, ground, claw.left, claw.right or card')
+    return v as BodyMotion
+  }
+  const raw = o['layers']
+  if (!Array.isArray(raw) || raw.length < 1 || raw.length > 64) return bad('body layers must contain 1 to 64 drawings')
+  const layers = raw.map((v, i) => {
+    if (!isObj(v)) return bad(`body layer ${i}: must be an object`)
+    const point = coord(v, `body layer ${i}`)
+    const rows = strList(v, 'rows')
+    if (rows.length < 1 || rows.length > CARD_H || rows.some(row => !/^[HBS. ]{1,18}$/.test(row))) bad('body rows must contain 1 to 14 rows of 1 to 18 H/B/S/dot/space pixels')
+    if (rows.length + point.y > CARD_H || rows.some(row => row.length + point.x > CARD_W)) bad('body layer exceeds the resting card')
+    const when: { legs?: 0 | 1; kick?: ('left' | 'right' | 'none')[] } = {}
+    if (v['when'] !== undefined) {
+      const w = v['when']
+      if (!isObj(w) || Object.keys(w).some(k => k !== 'legs' && k !== 'kick')) return bad('body layer when accepts legs and kick only')
+      if (w['legs'] !== undefined) {
+        if (w['legs'] !== 0 && w['legs'] !== 1) bad('body legs must be 0 or 1')
+        when.legs = w['legs'] as 0 | 1
+      }
+      if (w['kick'] !== undefined) {
+        const kicks = strList(w, 'kick')
+        if (kicks.length < 1 || kicks.some(k => !['left', 'right', 'none'].includes(k))) bad('body kick must list left, right or none')
+        when.kick = kicks as ('left' | 'right' | 'none')[]
+      }
+    }
+    return { ...point, rows, motion: motion(v['motion']), when }
+  })
+  const a = o['anchors']
+  if (!isObj(a)) return bad('body anchors must define every named anchor')
+  const anchors = {} as BodyDef['anchors']
+  for (const key of ANCHORS) {
+    const v = a[key]
+    const point = coord(v, `body anchor ${key}`)
+    anchors[key] = { ...point, motion: motion(isObj(v) ? v['motion'] : undefined) }
+  }
+  if (anchors.card.x !== 0 || anchors.card.y !== 0 || anchors.card.motion !== 'card') bad('card anchor must stay fixed at 0, 0')
+  const arms = o['armLift']
+  if (!isObj(arms)) return bad('body armLift must define left and right displacements')
+  const left = num(arms, 'left', -4, 4), right = num(arms, 'right', -4, 4)
+  if (!Number.isInteger(left) || !Number.isInteger(right)) bad('body armLift must contain integers')
+  const e = o['eyes']
+  if (!isObj(e) || !Array.isArray(e['points']) || e['points'].length < 1 || e['points'].length > 8) return bad('body eyes must define 1 to 8 points')
+  const eyes = { points: e['points'].map(v => coord(v, 'body eye')), height: num(e, 'height', 1, 3), blink: num(e, 'blink', 0, 2), look: num(e, 'look', 0, 2) }
+  if (![eyes.height, eyes.blink, eyes.look].every(Number.isInteger)) bad('body eye dimensions must be integers')
+  return { id: idOf(o), name: str(o, 'name') as string, layers, anchors, armLift: { left, right }, eyes, origin, source: o }
+}
+
 const parseCostume = (o: Obj, origin: string): CostumeDef => {
   const id = idOf(o)
   const bodyObj = o['body']
@@ -422,6 +482,7 @@ const parseCostume = (o: Obj, origin: string): CostumeDef => {
     id,
     name: str(o, 'name') as string,
     color: parseColor(o['color'], 'color'),
+    ...(str(body, 'id', true) ? { bodyId: str(body, 'id') as string } : {}),
     body: body['color'] !== undefined ? parseColor(body['color'], 'body.color') : CLAY,
     ...(body['eyes'] !== undefined ? { eyes: parseColor(body['eyes'], 'body.eyes') } : {}),
     pieces,
@@ -492,7 +553,7 @@ const monthDay = (v: unknown, where: string): number => {
   return n
 }
 
-const parseRules = (o: Obj, origin = 'rules'): { active?: string[]; rules: Rule[]; labels: Record<string, string>; master?: string; kinds?: Record<string, KindDef> } => {
+const parseRules = (o: Obj, origin = 'rules'): { active?: string[]; rules: Rule[]; labels: Record<string, string>; master?: string; defaultBody?: string; kinds?: Record<string, KindDef> } => {
   const master = str(o, 'master', true)
   const kinds: Record<string, KindDef> = {}
   const rawKinds = o['kinds']
@@ -552,6 +613,7 @@ const parseRules = (o: Obj, origin = 'rules'): { active?: string[]; rules: Rule[
     rules,
     labels,
     ...(master ? { master } : {}),
+    ...(str(o, 'defaultBody', true) ? { defaultBody: str(o, 'defaultBody') as string } : {}),
     ...(Object.keys(kinds).length > 0 ? { kinds } : {}),
   }
 }
@@ -562,6 +624,8 @@ export type DesignFile = { file: string; text?: string; json?: unknown }
 
 export const compilePack = (files: readonly DesignFile[], base: Pack = emptyPack()): Pack => {
   const p: Pack = {
+    bodies: { ...base.bodies },
+    ...(base.defaultBody ? { defaultBody: base.defaultBody } : {}),
     pieces: { ...base.pieces },
     costumes: { ...base.costumes },
     actions: { ...base.actions },
@@ -586,6 +650,9 @@ export const compilePack = (files: readonly DesignFile[], base: Pack = emptyPack
         const items = o['items']
         if (!Array.isArray(items)) bad('a bundle requires "items": [...]')
         for (const it of items as unknown[]) take(it, file)
+      } else if (type === 'body') {
+        const x = parseBody(o, file)
+        p.bodies[x.id] = x
       } else if (type === 'piece') {
         const x = parsePiece(o, file)
         p.pieces[x.id] = x
@@ -599,12 +666,13 @@ export const compilePack = (files: readonly DesignFile[], base: Pack = emptyPack
         const r = parseRules(o, file)
         if (r.active) p.active = r.active
         if (r.master) p.master = r.master
+        if (r.defaultBody) p.defaultBody = r.defaultBody
         if (r.kinds) Object.assign(p.kinds!, r.kinds)
         userRules.push(...r.rules)
         Object.assign(p.labels, r.labels)
         p.rulesSource.push(o)
         if (!p.rulesFiles.includes(file)) p.rulesFiles.push(file)
-      } else bad(`"type" must be piece, costume, action, rules or bundle (got "${String(type)}")`)
+      } else bad(`"type" must be body, piece, costume, action, rules or bundle (got "${String(type)}")`)
     } catch (e) {
       if (!(e instanceof Bad)) throw e
       p.problems.push({ file, ...(id ? { id } : {}), msg: e.message, fatal: true })
@@ -629,10 +697,15 @@ export const compilePack = (files: readonly DesignFile[], base: Pack = emptyPack
 
 /** Cross-references: costumes name pieces that exist, one piece per slot, nothing under what another covers. */
 const link = (p: Pack): Pack => {
+  if (p.defaultBody && !Object.hasOwn(p.bodies, p.defaultBody)) {
+    p.problems.push({ file: 'rules', msg: `defaultBody "${p.defaultBody}" does not exist`, fatal: true })
+    delete p.defaultBody
+  }
   for (const d of Object.values(p.costumes)) {
     const missing = d.pieces.filter(id => !p.pieces[id])
     const used = new Map<Slot, string>()
     const problems: string[] = missing.map(id => `piece "${id}" does not exist`)
+    if (d.bodyId && !Object.hasOwn(p.bodies, d.bodyId)) problems.push(`body "${d.bodyId}" does not exist`)
     for (const id of d.pieces) {
       const pz = p.pieces[id]
       if (!pz) continue
@@ -702,7 +775,9 @@ const drawLayer = (put: Put, ox: number, oy: number, c: Layer, off: { x: number;
 
 // ---- drawing one agent
 
-export type Plan = { pose: Pose; mirror: boolean; hidden: Set<string>; effect: boolean; pieces: Piece[]; body: number }
+export const effectiveBodyId = (pack: Pack, costume: string): string => pack.costumes[costume]?.bodyId ?? pack.defaultBody ?? 'crab'
+
+export type Plan = { rig?: BodyDef; pose: Pose; mirror: boolean; hidden: Set<string>; effect: boolean; pieces: Piece[]; body: number }
 
 /** Decides what is drawn: the pose, which pieces, whether the effect moves to the other claw. */
 export const planOf = (pack: Pack, costume: string, action: string, t: number): Plan => {
@@ -728,7 +803,7 @@ export const planOf = (pack: Pack, costume: string, action: string, t: number): 
   if (mirror) pose = mirrorPose(pose)
   const base = d?.body ?? CLAY
   const body = a && a.dim > 0 ? mix(base, 0x808080, a.dim) : base
-  return { pose, mirror, hidden, effect, pieces, body }
+  return { rig: pack.bodies[effectiveBodyId(pack, d?.id ?? costume)], pose, mirror, hidden, effect, pieces, body }
 }
 
 /** Draws one agent card at (ox, oy): pieces by slot around the body, then the action's effect. */
@@ -745,13 +820,13 @@ export const renderAgent = (put: Put, ox: number, oy: number, pack: Pack, costum
   let bodyDrawn = false
   for (const p of layers) {
     if (!bodyDrawn && slotLayer(p.slot) > BODY_LAYER) {
-      drawCrab(body, ox, oy, pl.body, pl.pose, d?.eyes)
+      if (pl.rig) drawBody(body, ox, oy, pl.body, pl.pose, pl.rig, d?.eyes)
       bodyDrawn = true
     }
-    const off = anchorOffset(p.anchor, pl.pose)
+    const off = pl.rig ? bodyAnchorOffset(pl.rig, p.anchor, pl.pose) : { x: 0, y: 0 }
     for (const c of p.layers) drawLayer(body, ox, oy, c, off, actionId, t, TAG.piece(p.id), p.free)
   }
-  if (!bodyDrawn) drawCrab(body, ox, oy, pl.body, pl.pose, d?.eyes)
+  if (!bodyDrawn && pl.rig) drawBody(body, ox, oy, pl.body, pl.pose, pl.rig, d?.eyes)
   if (pl.effect && a) {
     const fx: Put = pl.mirror ? (x, y, col, tag) => put(ox + CARD_W - 1 - (x - ox), y, col, tag) : put
     for (const c of a.effect) drawLayer(fx, ox, oy, c, { x: 0, y: 0 }, actionId, t, TAG.effect(a.id))
@@ -895,11 +970,16 @@ export const bundle = (pack: Pack, ids: readonly string[]): { json: unknown; mis
     const d = pack.costumes[rawId] ?? pack.costumes[cId]
     const pz = pack.pieces[rawId] ?? pack.pieces[pId]
     const ac = pack.actions[rawId] ?? pack.actions[aId]
+    const bd = pack.bodies[rawId]
     if (d) {
-      add('costume', d.id, d.source)
+      const id = effectiveBodyId(pack, d.id)
+      const src = d.source as Record<string, unknown>
+      add('costume', d.id, { ...src, body: { ...(isObj(src?.['body']) ? src['body'] : {}), id } })
+      if (pack.bodies[id]) add('body', id, pack.bodies[id]?.source)
       for (const p of d.pieces) if (pack.pieces[p]) add('piece', p, pack.pieces[p]?.source)
     } else if (pz) add('piece', pz.id, pz.source)
     else if (ac) add('action', ac.id, ac.source)
+    else if (bd) add('body', bd.id, bd.source)
     else missing.push(rawId)
   }
   return { json: { type: 'bundle', format: 'crabbus/1', name: ids.join(', '), items }, missing }

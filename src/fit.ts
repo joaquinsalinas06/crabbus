@@ -10,7 +10,7 @@
 // (which check, which action, which tick) is reported in English.
 
 import { CARD_H, CARD_W } from './canvas.ts'
-import { compilePack, planOf, renderAgent, without, type DesignFile, type Pack, type Problem } from './pack.ts'
+import { compilePack, effectiveBodyId, planOf, renderAgent, without, type DesignFile, type Pack, type Problem, type CostumeDef, type Piece, type Action } from './pack.ts'
 import { TAG } from './rig.ts'
 
 const M = 8 // margin around the card, to see what spills
@@ -162,17 +162,19 @@ export const visibility = (pack: Pack, costume: string): Record<string, Record<k
 
 const where = (action: string, t: number) => `in "${action}" (tick ${t})`
 
-export type FitReport = { problems: Problem[]; badPieces: Set<string>; badActions: Set<string> }
+export type FitReport = { problems: Problem[]; badPieces: Set<string>; badActions: Set<string>; badCostumes: Set<string> }
 
 export const checkPack = (pack: Pack, only?: ReadonlySet<string>): FitReport => {
   const problems: Problem[] = []
   const badPieces = new Set<string>()
   const badActions = new Set<string>()
+  const badCostumes = new Set<string>()
+  let context = ''
   const said = new Set<string>()
   const report = (id: string, kind: string, msg: string, file: string, isAction = false) => {
-    if (said.has(`${id}:${kind}`)) return
-    said.add(`${id}:${kind}`)
-    problems.push({ file, id, msg, fatal: true })
+    if (said.has(`${context}:${id}:${kind}`)) return
+    said.add(`${context}:${id}:${kind}`)
+    problems.push({ file, id, msg: `${msg}${context}`, fatal: true })
     ;(isAction ? badActions : badPieces).add(id)
   }
   // every piece is checked inside each costume that wears it; a piece nobody wears, on its own
@@ -187,16 +189,25 @@ export const checkPack = (pack: Pack, only?: ReadonlySet<string>): FitReport => 
   for (const { costume, pack: p } of cases) {
     const d = p.costumes[costume]
     if (!d || (only && !d.pieces.some(id => only.has(id)) && !only.has(costume))) continue
+    context = ` [body "${effectiveBodyId(p, costume)}", costume "${costume}"]`
     for (const action of actions)
       for (let t = 0; t < CYCLE; t++) {
         const drawn = draw(p, costume, action, t)
         for (const [tag, s] of drawn.tags) {
-          if (tag === TAG.body || tag === TAG.eye || TAG.isLeaves(tag)) continue
+          if (TAG.isLeaves(tag)) continue
           const out = [...s].filter(k => !inside(k))
           if (out.length === 0) continue
           const y = Math.floor((out[0] as number) / W) - M
           const side = y < 0 ? 'at the top' : y >= CARD_H ? 'at the bottom' : 'on the side'
-          if (TAG.isEffect(tag)) {
+          if (tag === TAG.body || tag === TAG.eye) {
+            const key = `${context}:body-edge`
+            if (!said.has(key)) {
+              said.add(key)
+              badCostumes.add(costume)
+              problems.push({ file: p.bodies[effectiveBodyId(p, costume)]?.origin ?? d.origin, id: costume,
+                msg: `body spills outside the card ${side} ${where(action, t)}${context}`, fatal: true })
+            }
+          } else if (TAG.isEffect(tag)) {
             const id = TAG.effectId(tag)
             report(id, 'edge', `effect spills outside the card ${side} (tick ${t})`, p.actions[id]?.origin ?? '', true)
           } else {
@@ -230,7 +241,7 @@ export const checkPack = (pack: Pack, only?: ReadonlySet<string>): FitReport => 
       }
     }
   }
-  return { problems, badPieces, badActions }
+  return { problems, badPieces, badActions, badCostumes }
 }
 
 /** Compiles design files over `base` and drops whatever does not fit, saying why. */
@@ -241,9 +252,35 @@ export const loadPack = (files: readonly DesignFile[], base: Pack): Pack => {
   for (const [id, x] of Object.entries(p.pieces)) if (x !== base.pieces[id]) touched.add(id)
   for (const [id, x] of Object.entries(p.costumes)) if (x !== base.costumes[id]) touched.add(id)
   const newActions = Object.values(p.actions).some(a => a !== base.actions[a.id])
-  const r = checkPack(p, newActions ? undefined : touched)
-  const out = without(p, r.badPieces, r.problems)
+  const newBodies = p.defaultBody !== base.defaultBody || Object.values(p.bodies).some(b => b !== base.bodies[b.id])
+  const r = checkPack(p, newActions || newBodies ? undefined : touched)
+  const dropped = without(p, r.badPieces, r.problems)
+  const out = { ...dropped, costumes: Object.fromEntries(Object.entries(dropped.costumes).filter(([id]) => !r.badCostumes.has(id))) }
   if (r.badActions.size === 0) return out
   const actions = Object.fromEntries(Object.entries(out.actions).filter(([id]) => !r.badActions.has(id)))
   return { ...out, actions, order: out.order.filter(a => !r.badActions.has(a.id)) }
+}
+
+/** Reuse fit across rules-only pack revisions; geometry references invalidate the entry. */
+type BodyFit = { pieces: (Piece | undefined)[]; actions: Action[]; problems: Problem[] }
+const bodyFits = new WeakMap<CostumeDef, WeakMap<object, BodyFit>>()
+export const bodyCompatibility = (pack: Pack, costume: string, body: string): Problem[] => {
+  const d = pack.costumes[costume], b = pack.bodies[body]
+  if (!d || !b || !Object.hasOwn(pack.bodies, body)) return [{ file: 'body', msg: `unknown costume "${costume}" or body "${body}"`, fatal: true }]
+  let cache = bodyFits.get(d)
+  if (!cache) { cache = new WeakMap(); bodyFits.set(d, cache) }
+  const pieces = d.pieces.map(id => pack.pieces[id])
+  const actions = Object.values(pack.actions)
+  const prior = cache.get(b)
+  if (prior && prior.pieces.length === pieces.length && prior.actions.length === actions.length &&
+    pieces.every((p, i) => p === prior.pieces[i]) && actions.every((a, i) => a === prior.actions[i])) return prior.problems
+  const problems = checkPack({ ...pack, costumes: { [costume]: { ...d, bodyId: body } },
+    pieces: Object.fromEntries(pieces.filter((p): p is Piece => p !== undefined).map(p => [p.id, p])) }).problems
+  cache.set(b, { pieces, actions, problems })
+  return problems
+}
+
+export const defaultBodyCompatibility = (pack: Pack, body: string): Problem[] => {
+  if (!Object.hasOwn(pack.bodies, body)) return [{ file: 'rules', msg: `unknown body "${body}"`, fatal: true }]
+  return Object.values(pack.costumes).filter(d => !d.bodyId).flatMap(d => bodyCompatibility(pack, d.id, body))
 }

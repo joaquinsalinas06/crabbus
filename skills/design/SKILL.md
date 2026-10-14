@@ -5,6 +5,49 @@ description: Design or customize the appearance of CrabBus crabs (the animated s
 
 # Designing CrabBus Crabs
 
+## Choose the Creature First
+
+Ask which creature the crew should be before drawing clothing. Use `crab` by default;
+`robot` is a second built-in body. Export either with `/costume export crab` or
+`/costume export robot`, edit the resulting body JSON, preview, fit-check, then install
+it in the user's designs folder. The crab remains the reference grid for all accessories.
+
+A costume keeps its existing `body` color object and may add `body.id` (for example,
+`{ "id": "robot", "color": "#d97757", "eyes": "#1f1e1d" }`). Selection is
+`costume.body.id`, then `rules.defaultBody`, then `crab`. Removing the explicit ID restores
+inheritance. Old designs keep inheriting; do not insert an explicit crab ID during migration.
+Changing a built-in costume in the wardrobe writes a user override with the same costume ID.
+Never edit the installed built-in source to customize a user's crew.
+
+### Body Contract
+
+A `type: "body"` object contains `id`, `name`, `layers`, `anchors`, `armLift`, and `eyes`:
+
+- Each layer has integer `x`, `y`, `rows`, and `motion`. Rows use `H` (highlight), `B`
+  (body color), `S` (shadow), and dots/spaces (transparent), within the 18 by 14 card.
+- `motion` is `body`, `ground`, `claw.left`, `claw.right`, or `card`. Body follows bob,
+  lift and horizontal shake; ground skips bob; claws also follow the corresponding arm.
+  `armLift.left` and `.right` specify the displacement at raised arm state 1.
+- Optional layer `when.legs` is 0 or 1; `when.kick` lists `left`, `right`, or `none`.
+  Supply normal and kicking leg layers as needed. Layer order is paint order.
+- Every anchor (`card`, `body`, `head`, `face`, `claw.left`, `claw.right`, `ground`)
+  supplies resting integer `x`, `y`, and `motion`. `card` must be fixed at 0, 0.
+  Accessories move by the selected anchor minus the resting crab anchor, plus pose motion.
+- `eyes.points` gives 1 to 8 positions; `height` is 1 to 3, `blink` is the closed-eye
+  row offset, and `look` is the gaze displacement. The renderer handles open, blink,
+  shut, left, right, up, red and facing-away poses. Width turns the whole sprite together.
+
+Start from an exported body rather than inventing anchors from memory. Keep shoulders,
+head and hands near the reference crab when reusing existing clothing. Fit checks all
+body/eye pixels, accessory attachment, eye coverage, contrast and card bounds over actions.
+Incompatible wardrobe choices are noninteractive and display the first reason with body,
+costume, action and tick; repair the design before selecting them.
+
+Preview a body with `node tools/preview.ts --design robot.json --out robot.png`, or test
+an inherited species with `node tools/preview.ts --design outfit.json --body robot --out robot.png`.
+A costume with an explicit body keeps it. Complete preview and fit before installation.
+
+
 Everything a crab wears or does consists of **JSON data** in `~/.claude/crabbus/*.json` (find the exact path with `/costume folder`, or legacy `/disfraz folder`). Files reload automatically in ~2 seconds without restarting plugins. Never edit plugin source code directly for a costume design.
 
 Before being used, each design runs through the **fit validator**: it is rendered across all actions and ticks, and rejected if it floats, overflows the card boundaries, covers the eyes unexpectedly, or lacks contrast against dark or light backgrounds. Your goal is to pass validation on the first try and look great.

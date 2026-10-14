@@ -108,9 +108,12 @@ function design(): void {
     const list = statSync(p).isDirectory() ? readdirSync(p).filter(f => f.endsWith('.json')).map(f => `${p}/${f}`) : [p]
     for (const f of list) files.push({ file: f.split('/').pop() as string, text: readFileSync(f, 'utf8') })
   }
+  const selectedBody = arg('--body')
+  const customBody = files.flatMap(f => { try { const o = JSON.parse(f.text ?? '{}'); return o.type === 'body' ? [o.id] : [] } catch { return [] } })[0]
+  if (selectedBody || customBody) files.push({ file: '(preview body)', json: { type: 'rules', defaultBody: selectedBody ?? customBody } })
   const pack: Pack = loadPack(files, BUILTIN)
   const mine = new Set(files.map(f => f.file))
-  const problems = pack.problems.filter(x => mine.has(x.file) || x.file === 'rules')
+  const problems = pack.problems.filter(x => mine.has(x.file) || x.file === 'rules' || x.fatal)
   for (const x of problems) console.log(`${x.fatal ? 'PROBLEM' : 'warning'} ${x.file}${x.id ? ` (${x.id})` : ''}: ${x.msg}`)
   // the costume to show: the one asked for, else the first one the files define, else the files' pieces on a bare crab
   const own = Object.values(pack.costumes).filter(d => mine.has(d.origin))

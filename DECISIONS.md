@@ -33,3 +33,8 @@
 - The band's `maxRows` is the only height limit (if not, the stage may scroll).
 - `$.state` survives a hot reload (designed for, unverified); module timers restart on reload.
 - `$.session.messages({ agentId, as: 'api' })` reads a running background subagent's transcript (if not, the detail falls back to the hooks' tool log).
+
+| Body as data; crab kept pixel-identical | A renderer branch for each creature | One Pose interpreter draws editable body layers and anchors; existing golden fingerprints stay unchanged. |
+| `costume.body.id` before `rules.defaultBody` before crab | A global default overriding explicit costume choices | A default supplies missing choices; removing an ID restores inheritance without migrating old files. |
+| Built-in body choices save same-ID user costume overrides | Editing the installed built-in source | User changes persist without changing shared artwork or losing sibling bundle items. |
+| Body selectors fit-check before enabling and again before saving | Accepting a selection then silently hiding incompatible pieces | The visible body/costume/action/tick reason explains what must be repaired; cached results last only for the current pack revision. |

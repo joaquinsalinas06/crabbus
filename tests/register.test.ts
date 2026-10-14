@@ -1,3 +1,4 @@
+import { BODIES } from '../src/builtin.ts'
 // Kit tests for the hooks module (claude plugin test). The pure logic has its own Node specs in spec/.
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { AgentSpawnInput, On, RenderNode, RenderPropsOf, SessionSendInput, SessionStartInput, ToolCallInput, TurnCompleteInput } from 'claude-code'
@@ -370,6 +371,58 @@ for (const surface of ['terminal', 'desktop'] as const) describe(`crabbus (${sur
     const fallback = await text('')
     expect(fallback).toMatch(/WEARING NOW:/)
     expect(fallback).toMatch(/RULES IN ORDER/)
+  })
+
+  test('body selectors persist builtin overrides, inherit defaults and preserve files on write failure', { timeoutMs: 15000 }, async ($, on) => {
+    stubs(on, [], [])
+    mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg', HOME: '/home/u' })
+    const files: Record<string, string> = {}
+    let failWrite = false, version = 1
+    on('fs.exists', ($, e) => ({ value: e.path === '/cfg/crabbus' }))
+    on('fs.list', () => ({ value: Object.entries(files).map(([name, t]) => ({ name, kind: 'file' as const, size: t.length, mtimeMs: version, isLink: false })) }))
+    on('fs.read', ($, e) => ({ value: files[e.path.replace('/cfg/crabbus/', '')] ?? '' }))
+    on('fs.write', ($, e) => {
+      if (failWrite) throw new Error('test disk failure')
+      files[e.path.replace('/cfg/crabbus/', '')] = e.text; version++
+      return { value: undefined }
+    })
+    on('ui.toast', () => ({ value: undefined }))
+    await $.session.start(start)
+    const ui = await mountPane($)
+    await ui.press({ key: 'view-wardrobe' })
+    await ui.press({ key: 'wd-body-default-robot' })
+    expect(JSON.parse(files['rules.json'] ?? '{}').defaultBody).toBe('robot')
+    expect(await ui.find({ type: 'Text', text: /Body: robot \(rules.defaultBody\)/ })).toBeDefined()
+    await ui.press({ key: 'wd-body-master-crab' })
+    expect(JSON.parse(files['body-master.crab.json'] ?? '{}').body.id).toBe('crab')
+    expect(await ui.find({ type: 'Text', text: /Body: crab \(costume\)/ })).toBeDefined()
+    const prior = files['body-master.crab.json']
+    failWrite = true
+    await ui.press({ key: 'wd-body-master-robot' })
+    expect(files['body-master.crab.json']).toBe(prior)
+    expect(await ui.find({ type: 'Text', text: /Body: crab \(costume\)/ })).toBeDefined()
+    failWrite = false
+    await ui.press({ key: 'wd-body-inherit-master' })
+    expect(JSON.parse(files['body-master.crab.json'] ?? '{}').body.id).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /Body: robot \(rules.defaultBody\)/ })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('incompatible body choices show a reason without a press target', async ($, on) => {
+    stubs(on, [], [])
+    mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg', HOME: '/home/u' })
+    const bad = JSON.parse(JSON.stringify(BODIES[1]))
+    bad.id = 'bad-robot'; bad.name = 'Bad robot'; bad.anchors.head.x = 17
+    const text = JSON.stringify(bad)
+    on('fs.exists', ($, e) => ({ value: e.path === '/cfg/crabbus' }))
+    on('fs.list', () => ({ value: [{ name: 'bad.json', kind: 'file' as const, size: text.length, mtimeMs: 1, isLink: false }] }))
+    on('fs.read', () => ({ value: text }))
+    await $.session.start(start)
+    const ui = await mountPane($)
+    await ui.press({ key: 'view-wardrobe' })
+    expect(await ui.find({ type: 'Button', key: 'wd-body-master-bad-robot' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /Bad robot.*unavailable:.*tick/ })).toBeDefined()
+    await ui.unmount()
   })
 
   test('sprites update their state, reduced-motion Desktop stays fixed, and only terminal blits', { options: { reduceMotion: surface === 'desktop' }, plugins: [{ name: 'pane-closer', register: on => { on('command.run', { command: 'test-close-pane' }, async $ => { await $.ui.close({ id: 'crabbus' }); return { text: '' } }) } }] }, async ($, on) => {
