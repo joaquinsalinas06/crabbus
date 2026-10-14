@@ -25,7 +25,8 @@
 **CrabBus** is a Claude Code mod for orchestrating ordinary subagents. The main agent (the
 *master*) gets an accurate picture of what every subagent is doing, can message any of them and
 track the message until it lands, and sees tokens and cost per agent. You see all of it live as a
-crew of animated pixel crabs in your terminal.
+crew of animated pixel crabs in your terminal. The same plugin also renders SVG crabs and the
+shared controls in Claude Desktop, with animation driven by the same frame engine as the terminal.
 
 <p align="center"><img src="assets/demo.gif" alt="A real session: four subagents launched, the /bus panel tracking stages, tokens and cost until all are done" width="100%"></p>
 <p align="center"><sub>A real recording: four Haiku subagents, tracked from launch to done (sped up 2×).</sub></p>
@@ -51,8 +52,8 @@ CrabBus keeps three kinds of information apart and never mixes them:
 ### 🦀 A live crew above your prompt
 One crab per running subagent, each in its own costume, acting out what it is **really** doing:
 reading, writing, testing, thinking, blocked, error, done or asleep. The crowned master stands on
-the right. Envelopes fly from the master to an agent and rest on its head until the agent
-acknowledges them.
+the right. In the terminal, envelopes fly from the master to an agent and rest on its head until
+the agent acknowledges them. Desktop requests those same animation frames through Client.
 
 <p align="center"><img src="assets/crew.gif" alt="The seven built-in costumes cycling through every action" width="100%"></p>
 
@@ -123,14 +124,39 @@ week  ━━━━━━━━━━━━━───────────  
 | `a` / `w` | the agents / wardrobe tab |
 | `1`–`9` in the wardrobe | pick a costume on the page |
 
+### 🖥️ Claude Desktop, the same crew
+
+Open **Claude Code** in the Desktop app and use a **local session** on this computer. The same
+plugin provides `/bus` and `/costume`, with the same agent state, filters, messaging and design files.
+
+- **Animated SVG crabs:** the terminal and Desktop share the pixel art, costumes, frame engine
+  and director. Desktop uses Client to update frames without rebuilding the whole panel.
+- **Native controls:** buttons and message fields, flexible card text, graphical context/usage
+  bars and cost history. Desktop does not copy terminal spacing or ASCII graphs.
+- **A stable 2×2 wardrobe:** four slots per page, fixed card heights and space reserved before
+  sprites load. Previous/Next keep occupied Client instances and their timers; the last page
+  retains empty slots so the grid does not shrink or stretch.
+- **A visible master:** the agents panel includes it even with no subagents. With the panel
+  closed, Desktop also shows it above the prompt when the crew is empty, respecting `band=off`
+  and survey visibility.
+- **Controlled refresh:** wardrobe animation updates only its art; state, designs and controls
+  redraw when they change. List age labels refresh every five seconds and detail transcripts
+  every second. `reduceMotion` keeps still poses on both surfaces.
+
+Desktop drawing has been observed in the app. Layout, pagination, timer continuity and fallback
+contracts are tested against both its bundled 2.1.295 engine and the 2.1.300 CLI. Final visual
+checks of pagination smoothness, zoom, themes and performance remain listed in
+[Desktop verification](docs/RENDERING.md#desktop-verification). The GIFs and screenshots above
+show the terminal renderer.
+
 ### 🚦 Permission requests stay visible
 When Claude Code asks *you* to approve a subagent's tool call, that crab turns **blocked** and
 shows the command until you answer Claude Code's own dialog. The panel only displays the request.
 A plugin can't answer or close that dialog, and CrabBus doesn't pretend it can.
 
 ### 👗 A wardrobe you can talk to
-Every costume walking in a grid, who wears what as readable rules, and a box where you ask for a
-new costume or a new rule in your own words. See [Customize your crew](#customize-your-crew).
+Every costume walking in a grid on terminal and Desktop, who wears what as
+readable rules, and a box where you ask for a new costume or a new rule in your own words. See [Customize your crew](#customize-your-crew).
 
 ## Customize your crew
 
@@ -169,8 +195,9 @@ CrabBus plugin.
 
 <p align="center"><img src="assets/wardrobe.svg" alt="The wardrobe tab: the Tell CrabBus box, a page of costumes walking at full size with the page arrows at their sides, and the picked costume's card with its switches and rules" width="420"></p>
 
-**The grid** shows every costume walking at full size, four or six to a page; turn pages with the
-arrows at its sides. Each card tells you its state at a glance:
+**The grid** shows every costume walking at full size. Terminal pages adapt to the available
+columns, with arrows at the sides. Desktop always uses a stable **2×2** grid, with Previous/Next
+below it and the same reserved space on every page. Each card tells you its state at a glance:
 
 | Mark | Meaning |
 |---|---|
@@ -270,15 +297,19 @@ crowned master.
 
 | | |
 |---|---|
-| **Claude Code** | 2.1.296 or newer, in a terminal |
+| **Claude Code (terminal)** | 2.1.296 or newer |
+| **Claude Desktop** | local Claude Code session with mods support; bundled engine 2.1.295 kit-tested |
 | **Terminal** | truecolor recommended. In 256-color terminals the crabs are approximated |
 | **Size** | about 19 rows or more for the crab band; the panel adapts down to narrow widths |
 | **OS** | tested on **macOS**. Linux should work (nothing is OS-specific). Windows is untested |
 | **tmux** | ❌ not needed |
 | **Node / npm** | ❌ not needed to use it, only to run the specs |
 
-> Drawing happens only in the terminal. In Claude Desktop, the VS Code panel, `claude -p` and
-> cloud sessions nothing is drawn, but `bus_status` and `bus_step` still work.
+> Terminal drawing uses animated Raster cells. The Desktop renderer uses Client-driven SVG frames and
+> the same panel controls, with periodic state updates. Both render trees are tested with the mod
+> kit. Desktop drawing has been observed in the app; the updated native layout awaits final visual review (see
+> [Desktop verification](docs/RENDERING.md#desktop-verification)). Other surfaces keep their existing
+> text or tool fallback; this change does not claim graphical support for them.
 
 ## Install
 
@@ -287,7 +318,12 @@ claude plugin marketplace add joaquinsalinas06/crabbus
 claude plugin install crabbus@crabbus-local
 ```
 
-Then run `/reload-plugins` in an open session. To try it for one session without installing:
+Then run `/reload-plugins` in an open session. In Desktop, use the **Claude Code** tab with a
+local session, then enter `/bus` or `/costume` in the chat. Run slash commands in the chat, not
+in the terminal pane. This UI belongs to Claude Code sessions; the regular Chat and Cowork views
+are not the surfaces tested here.
+
+To try it for one terminal session without installing:
 
 ```bash
 git clone https://github.com/joaquinsalinas06/crabbus.git
@@ -345,7 +381,11 @@ flowchart LR
   to report with `bus_step`. The animation runs locally and costs **0 tokens per frame**.
 - **Exact pixels:** sprites are hand-drawn at 18×14 and painted with half-block cells (`▀`, with
   the upper pixel as foreground and the lower one as background), so every pixel keeps its 24-bit
-  color. Frames are swapped as a single raster, without redrawing the UI tree.
+  color. Terminal frames are swapped as a single raster, without redrawing the UI tree. Desktop
+  converts the same pixel canvas into SVG rectangles, displayed as static images at 4 CSS pixels
+  per art pixel. Client requests frames at `fps` without rebuilding the panel; its text maintenance
+  refreshes list age labels every five seconds and detail transcripts every second; the wardrobe
+  redraws on state or control changes. `reduceMotion` uses still images on both surfaces.
 
 ## Configuration
 
@@ -353,14 +393,14 @@ Set these with `/config`, or in settings under `pluginConfigs.crabbus.options`:
 
 | Option | Default | |
 |---|---|---|
-| `fps` | `6` | animation frames per second (1–10) |
-| `reduceMotion` | `false` | one still frame per state and one refresh a second |
+| `fps` | `6` | animation frames per second (1–10), on terminal and Desktop |
+| `reduceMotion` | `false` | one still frame per state and one refresh a second on both surfaces |
 | `openOnStart` | `true` | show the panel as soon as Claude Code starts |
-| `band` | `auto` | above the prompt: `auto` (one quiet line while the panel is hidden) · `stage` (full animated stage) · `off` |
+| `band` | `auto` | above the prompt: `auto` (quiet summary while the panel is hidden; Desktop keeps the master visible with an empty crew) · `stage` (full animated stage on both surfaces) · `off` |
 
 ## Performance
 
-25-second sample with 3 subagents running, on macOS:
+25-second **terminal** sample with 3 subagents running, on macOS (Desktop has not been benchmarked):
 
 | | CPU (avg) | RSS (avg) |
 |---|---|---|
@@ -387,6 +427,9 @@ npm run spec                                              # unit specs (node --t
 claude plugin test .                                      # plugin kit tests
 node tools/preview.ts --design my-hat.json --out hat.png  # preview a costume before installing it
 ```
+
+For Desktop changes, also run `plugin test .` with the Claude Code binary bundled with the
+running app. It may be older than the shell's `claude`; see [rendering compatibility](docs/RENDERING.md#desktop-layout).
 
 ## Credits
 
