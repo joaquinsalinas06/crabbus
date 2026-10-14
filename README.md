@@ -14,7 +14,7 @@
 [![Tested on macOS](https://img.shields.io/badge/tested%20on-macOS-8b949e?style=flat-square&logo=apple&logoColor=white)](#requirements)
 [![Zero tokens per frame](https://img.shields.io/badge/animation-0%20tokens-3fb96b?style=flat-square)](#how-it-works)
 
-[Features](#features) · [Install](#install) · [Usage](#usage) · [Customize](#customize-your-crew-with-skills) · [How it works](#how-it-works) · [Configuration](#configuration)
+[Features](#features) · [Install](#install) · [Usage](#usage) · [Customize](#customize-your-crew) · [How it works](#how-it-works) · [Configuration](#configuration)
 
 <img src="assets/banner.gif" alt="The CrabBus pulls in, the crew gets off and the crowned master hands out the work" width="100%">
 
@@ -120,21 +120,119 @@ week  ━━━━━━━━━━━━━───────────  
 | `m` | cards ↔ rows |
 | `f` | filter: all · active · attention · done |
 | `t` | transcript tab: all · tools · reasoning |
+| `a` / `w` | the agents / wardrobe tab |
+| `1`–`9` in the wardrobe | pick a costume on the page |
 
 ### 🚦 Permission requests stay visible
 When Claude Code asks *you* to approve a subagent's tool call, that crab turns **blocked** and
 shows the command until you answer Claude Code's own dialog. The panel only displays the request.
 A plugin can't answer or close that dialog, and CrabBus doesn't pretend it can.
 
-## Customize your crew with skills
+### 👗 A wardrobe you can talk to
+Every costume walking in a grid, who wears what as readable rules, and a box where you ask for a
+new costume or a new rule in your own words. See [Customize your crew](#customize-your-crew).
 
-Ask for a costume in plain words and the bundled **`design` skill** draws it:
+## Customize your crew
+
+Everything about the crew can be changed from the panel: what each costume looks like, which agent
+wears which, and who the master is. Open the **wardrobe** with the `wardrobe` tab at the top of the
+panel (key `w`) or with `/costume`.
+
+### Tell CrabBus: just say what you want
+
+The box at the top of the wardrobe takes plain words, in any language. Press Enter and CrabBus hands
+your request to Claude, which does it with the bundled **`design` skill**:
+
+| You type | What happens |
+|---|---|
+| *"make me a pumpkin crab, like a jack-o'-lantern mask"* | a new costume is drawn, checked and installed |
+| *"a Peru football fan: chullo, the jersey with the red sash, a little flag"* | the same, with several pieces |
+| *"the one who plans wears the detective"* | a rule is added to your rules file |
+| *"in October everyone is a pumpkin"* | a rule with a date range |
+| *"make the dino the master"* · *"take the capybara out of the rotation"* | the master or the rotation changes |
+| *"give the pirate a bigger hat"* | an existing costume is redrawn |
+
+- If you name something Claude does not know well (a meme, a character, something recent), it
+  searches the web first and designs from what it finds.
+- To work from a picture, put its file path in the message (`based on ~/Downloads/pumpkin.png`).
+- Every new costume is previewed and fit-checked before it is saved, and Claude tells you in a line
+  or two what changed.
+- While Claude works, the box says so. The panel reloads the folder by itself, and every rule that
+  arrives is marked **new** for a few seconds.
+- Each costume's card has its own box too, already about that costume: *"wear it when it reviews
+  code"*, *"add a scarf"*.
+
+Nothing is sent until you press Enter: the request shows in the conversation as a message from the
+CrabBus plugin.
+
+### The wardrobe
+
+**The grid** shows every costume walking at full size, four or six to a page; turn pages with the
+arrows at its sides. Each card tells you its state at a glance:
+
+| Mark | Meaning |
+|---|---|
+| ★ and a little dance | the **master**: the crab at the top of the panel, this session |
+| ● rotation, colored border | **in the rotation**: agents no rule matches take turns wearing it |
+| ○ off, asleep | out of the rotation: only a rule can dress an agent in it |
+| ×2 | worn by two agents right now |
+
+**Pick a costume** (click its name, or press `1`–`9`) and its card opens below the grid:
+
+- **in rotation** and **make it the master**: two switches, applied at once.
+- **An agent wears it when**: every rule that gives this costume, yours and the built-in ones.
+- **Tell CrabBus about it**: the box described above, for this costume.
+- **Set it by hand** (folded, for experienced users): choose what the rule looks at, type what it
+  should match, press Enter.
+
+What a rule can look at, each with its own color in the panel:
+
+| Tag | What it reads | Example |
+|---|---|---|
+| `title` | the short title Claude gives the task | `bug\|fix` |
+| `prompt` | the first 400 characters of the agent's instructions | `refactor\|migrate` |
+| `agent type` | `Explore`, `Plan`, `general-purpose`, or a plugin's agent | `^Plan$` |
+| `agent name` | the name the agent was given, when it has one | `reviewer` |
+| `mode` | its permission mode: `default`, `plan`, `acceptEdits`, `auto` | `^plan$` |
+| `model` | the model it runs on | `haiku` |
+| `kind` | a kind of task you defined with its words under `kinds` | `planning` |
+| `date` | today, between two days of the year | `10-01..10-31` |
+
+Case does not matter; `|` means "or", `^` "starts with" and `$` "ends with". A pattern that could
+hang Claude Code is refused, with the reason.
+
+**All my rules**, below the card, lists every rule of yours in order. Move one with ▲ ▼, switch it
+between *one at a time* (skipped while another agent already wears that costume) and *can repeat*,
+delete it with ✕, or click its costume to open that costume's card. The built-in rules are folded
+under them.
+
+**How an agent gets its costume:** when it starts, the rules are tried from the top, yours before
+the built-in ones, and the first that fits dresses it. If none fits, it takes the next costume in
+the rotation. The master wears whichever costume you made the master.
+
+Every change shows at once and is saved to your rules file (the first `"type": "rules"` file in
+the designs folder). `/costume rules` prints the same in the conversation, including which rule
+dressed each running agent.
+
+### Or ask the design skill in the chat
+
+The same skill works in a normal conversation:
 
 > *"Give the reviewer a capybara hat"* · *"a Christmas costume for everyone"* · *"make it jump when it runs `git commit`"*
 
 <p align="center"><img src="assets/custom-crew.gif" alt="Five costumes made with the design skill (capybara hood, capybara fisher, french, dino, christmas) going through every action, including a custom git commit celebration" width="100%"></p>
 
-Every crab above was made by asking the skill, and all of them ship in [`examples/`](examples):
+It handles more than costumes:
+
+- **Actions:** a new animation tied to a tool call, such as `git commit` in the table below.
+- **Rules and kinds:** everything the wardrobe does, written as data; a `kind` names a kind of task
+  by its words (`"planning": ["plan", "design"]`) so several rules can share it.
+- **Labels:** rename any state (`"thinking": "… pondering"`).
+
+### Examples
+
+Every crab here was made by asking the skill, the last two through **Tell CrabBus**, and all of
+them ship in [`examples/`](examples):
 
 | File | What it adds | Kind |
 |---|---|---|
@@ -143,21 +241,19 @@ Every crab above was made by asking the skill, and all of them ship in [`example
 | [`french.crab.json`](examples/french.crab.json) | grey beret and curly mustache | costume |
 | [`dino.crab.json`](examples/dino.crab.json) | hood, suit and tail | costume |
 | [`christmas.crab.json`](examples/christmas.crab.json) | santa hat and scarf | costume |
+| [`pumpkin.crab.json`](examples/pumpkin.crab.json) | a full jack-o'-lantern mask whose carved face flickers like a candle, and goes out when it sleeps | costume |
+| [`peru.crab.json`](examples/peru.crab.json) | a Peru football fan: colorful chullo, white jersey with the red sash, flag face paint, a waving mini flag | costume |
 | [`commit.crab.json`](examples/commit.crab.json) | confetti and a jump whenever an agent runs `git commit` | action |
 | [`rules.json`](examples/rules.json) | who wears what: by agent description (`dino`, `fisher`…) and everyone in Christmas from Dec 1–31 | rules |
 
 ```bash
-/costume import examples/dino.crab.json   # validated again on import
+/costume import examples/pumpkin.crab.json   # validated again on import
 ```
 
-The skill handles more than costumes:
+### Under the hood
 
-- **Actions:** a new animation tied to a tool call, such as `git commit` in the table above.
-- **Rules:** who wears what, matched by agent type, name, description, model or date range.
-- **Labels:** rename any state (`"thinking": "… pondering"`).
-
-- Every costume, piece and action is **JSON data**, never code, kept in
-  `~/.claude/crabbus/` (`/costume folder` prints the exact path).
+- Every costume, piece, action and rule is **JSON data**, never code, kept in `~/.claude/crabbus/`
+  (`/costume folder` prints the exact path).
 - A **fit validator** draws each design in every action and frame, and rejects it if a piece
   floats, overflows the card, hides the eyes by accident or lacks contrast on dark or light
   terminals.
@@ -166,7 +262,7 @@ The skill handles more than costumes:
   is installed.
 
 Built-in crew: astronaut, detective, engineer, chef, pilot, pirate and propeller cap, plus the
-crowned master. Costumes go to agents by role, and you can change who wears what.
+crowned master.
 
 ## Requirements
 
@@ -216,7 +312,9 @@ The master calls `bus_status`, which returns each agent's id and its three layer
 
 | Command | |
 |---|---|
-| `/bus` | open the panel |
+| `/bus` | open the side panel on its agents tab |
+| `/costume` | open the wardrobe in the side panel (or print the rules as text if there is no panel) |
+| `/costume rules` | print the rules in order, the master, the rotation and which rule dressed each running agent |
 | `/costume list · folder · reload · export · import · migrate` | manage crab designs |
 
 ## How it works
