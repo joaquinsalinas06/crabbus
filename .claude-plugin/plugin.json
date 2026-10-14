@@ -36,6 +36,12 @@
         "stage",
         "off"
       ]
+    },
+    "externalAgents": {
+      "type": "string",
+      "title": "External agents (JSON)",
+      "description": "JSON with agents, maxConcurrent (3) and maxMinutes (30). Codex, Claude profiles and agy safe; agy auto is not supported. Empty by default.",
+      "default": "{\"agents\":{}}"
     }
   }
 }

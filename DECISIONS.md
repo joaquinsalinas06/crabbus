@@ -26,6 +26,13 @@
 | The wardrobe is a second view of the side panel, behind a tab row (`agents` · `wardrobe`) | A separate pane, or a button in the panel's header | One pane keeps one focus and one set of keys; a header button collided with the header's own facts. `/costume` opens the same view, and prints the rules as text where no panel can be drawn. |
 | Dynamic `pack.active` inheritance in `rules-edit.ts` | Overwriting active rotation with hardcoded defaults | Toggling an active costume in the UI when `rules.json` lacks an explicit `active` list inherits all currently active costumes rather than resetting the rotation to built-in presets. |
 | A rules edit is planned in memory (`src/rules-edit.ts`): only the files that carry rules are compiled again over the pack in use, then the change is shown and the file written | Validating with a full `loadPack` before every write | A full reload fit-checks every costume: about 590 ms on six user designs, during which the crabs stop. Rules never change a costume's pixels, so recompiling only the rules (0.3 ms) gives the same pack, which a spec checks against a full reload. A file that is not valid JSON, or a pattern the pack refuses, is never written; the edit is refused with the reason. |
+| Codex workspace-write excludes /tmp but permits per-user TMPDIR | Excluding both temporary roots | Runtime probe: blocking TMPDIR broke Node mkdtemp, npm cache creation and shell heredocs; allowing it passed Python, Node and npm without expanding Git metadata access. |
+| Antigravity 1.3.5 is safe-only in external-agent v1 | Enable --dangerously-skip-permissions --sandbox | git status fails inside that sandbox. Safe accept-edits edits files and denies commands; the plugin computes diffstat and untracked from the host for every CLI. Reject auto explicitly until supported (PR #9). |
+| External CLIs run directly on their own subscriptions | An intermediary model proxy | Their native JSON streams supply activity and usage without API keys or an extra model call. |
+| Host-generated worktree summaries; external agents leave changes uncommitted | Giving agents writable access to shared Git metadata | Linked worktree metadata is outside the sandbox root. Host Git reports tracked and untracked changes without widening agent access. |
+| One process per external agent with FIFO continuations and bounded runtime | Parallel resumes of the same provider session | Keeps identity/context coherent and lets Stop or timeout discard pending messages deterministically. |
+| Batch completed external turns into one prompt.submit while the master is idle | One master turn per completion | Parallel agents do not spend an extra Claude turn each; dropped/failed submissions retain the batch. |
+
 
 ## Unverified assumptions (what breaks if wrong)
 
@@ -33,6 +40,3 @@
 - The band's `maxRows` is the only height limit (if not, the stage may scroll).
 - `$.state` survives a hot reload (designed for, unverified); module timers restart on reload.
 - `$.session.messages({ agentId, as: 'api' })` reads a running background subagent's transcript (if not, the detail falls back to the hooks' tool log).
-
-| Codex workspace-write excludes /tmp but permits per-user TMPDIR | Excluding both temporary roots | Runtime probe: blocking TMPDIR broke Node mkdtemp, npm cache creation and shell heredocs; allowing it passed Python, Node and npm without expanding Git metadata access. |
-| Gate external-agent rollout on linked-worktree sandbox support | Enable Antigravity auto mode despite inaccessible Git metadata | Antigravity 1.3.5 edited files but git status failed under --sandbox, including after omitting global Git configuration. Keep the feature disabled until the gate is resolved. |

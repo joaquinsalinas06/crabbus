@@ -443,3 +443,62 @@ DockCrab / Clawdy. Every sprite was redrawn by hand for the terminal. See
 [MIT](LICENSE) © [joaquinsalinas06](https://github.com/joaquinsalinas06)
 
 <div align="center"><br><img src="assets/logo.png" width="72" alt="CrabBus logo"></div>
+
+### External subscription CLIs
+
+The master can call `mcp__crabbus__bus_delegate` to launch Codex, another Claude profile,
+or Antigravity in safe mode directly. No API key or intermediary model is used. Configure
+the `externalAgents` plugin option as a JSON string containing this object:
+
+```json
+{
+  "maxConcurrent": 3,
+  "maxMinutes": 30,
+  "agents": {
+    "coder": { "cli": "codex" },
+    "safe": { "cli": "agy", "level": "safe" },
+    "claude-js": {
+      "cli": "claude",
+      "env": { "CLAUDE_CONFIG_DIR": "~/.claude-js" },
+      "allow": ["Bash(npm test:*)"]
+    }
+  }
+}
+```
+
+Only configured executables that answer `--version` appear in the tool description.
+A new call takes `agent`, `prompt`, `description`, and optional `mode` (`edit` by default,
+or `read`). Subagents cannot delegate. `to` resumes an existing external agent using its
+saved provider session; busy agents queue messages FIFO, without simultaneous processes.
+A continuation cannot change profile or mode. A session accepts at most 100 external
+agents and 20 queued messages per agent to bound retained input.
+
+Editing always starts from committed HEAD in `.crabbus/worktrees/<id>`, on branch
+`crabbus/<cli>-<id>`. The tool reports how many uncommitted primary-checkout files are
+absent. Outside Git, edit mode is refused; read mode uses the current directory. Runtime
+worktrees are ignored through the repository's ignore rules or a local `info/exclude`
+entry; no tracked project configuration is edited to create that exclusion.
+
+External agents are instructed not to commit or merge. They leave tracked changes and
+new files for review. **The plugin computes diffstat and untracked files from the host**
+for all providers; agents do not need Git access for their completion report. Finished,
+failed and cancelled worktrees remain in place. Nothing is merged or deleted automatically.
+
+Codex uses workspace-write (or read-only), excludes /tmp and permits per-user TMPDIR so
+build tools work. Claude uses the configured account with acceptEdits and its allow list;
+read mode uses plan. Antigravity safe uses accept-edits: edits work and commands are denied.
+`agy auto` is rejected with `agy auto is not supported yet: git fails inside its sandbox,
+see PR #9` (tested with 1.3.5). Worktrees separate Git changes; provider plan/accept-edits
+modes do not establish an OS filesystem sandbox. No global provider settings are edited.
+
+The panel and bus_status show CLI identity, activity, explicit plans, denials and subscription
+tokens without dollar estimates. External usage never changes Claude's dollar ledger.
+The detail view uses normalized logs rather than a native transcript and offers Stop for
+running or queued work. Timeout uses the same stream cancellation as Stop. Session unload
+kills child processes; a plugin reload does not reconnect to an external CLI process.
+
+Each completed turn becomes one result entry. While the master is busy, entries accumulate;
+when idle, one prompt.submit carries the batch. Failed/dropped submissions retain their
+entries for retry. Notifications include provider result, denials, branch, diffstat and
+untracked files. Logs and response excerpts are bounded; oversized output lines are discarded
+with a diagnostic. See [runtime evidence](evidence/external-gate/README.md).

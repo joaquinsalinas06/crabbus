@@ -4,16 +4,17 @@
 // tool's call, never changes a message, and any failure of its own falls through to `next(e)`.
 // It also adds one thing the model reads: BRIEF, appended to each spawned subagent's prompt (see README).
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, FsEntry, Register, RenderChildren, RenderElement, RenderInput, RenderNode } from 'claude-code'
+import type { EngineInterface, FsEntry, Register, RenderChildren, RenderElement, RenderInput, RenderNode, HookStream, ProcessSpawnChunk, ProcessSpawnResult } from 'claude-code'
 
 import { CARD_H, CARD_W, canvas, cellsOf, drawAgent } from '../src/art.ts'
 import type { Canvas } from '../src/canvas.ts'
 import { barSvg, sparkSvg, toSvg } from '../src/svg.ts'
+import { externalConfig, externalArgv, externalParser, externalLines, AGY_AUTO_ERROR, type ExternalConfig, type ExternalAgent, type ExtEvent } from '../src/external.ts'
 import { BUILTIN } from '../src/builtin.ts'
 import { MASTER, direct, emptyDirector, playOf, type Director } from '../src/director.ts'
 import { loadPack } from '../src/fit.ts'
 import { normalizeDesignJson } from '../src/legacy.ts'
-import { PERSON_DECIDES, describeInput, emptyState, onComplete, onMasterTool, onMeasure, onPermissionAnswer, onPermissionAsk, onReceive, onSend, onSpawn, onStep, onToolEnd, onToolStart, onUsage, parseStep, resolveTarget, statusReport, stepReceipt, type Limit } from '../src/model.ts'
+import { PERSON_DECIDES, onResume, onExternal, describeInput, emptyState, onComplete, onMasterTool, onMeasure, onPermissionAnswer, onPermissionAsk, onReceive, onSend, onSpawn, onStep, onToolEnd, onToolStart, onUsage, parseStep, resolveTarget, statusReport, stepReceipt, type Limit } from '../src/model.ts'
 import type { AgentRec, BusState, Completion, SpawnInfo } from '../src/model.ts'
 import { BUILTIN_ORIGIN, bundle, type DesignFile, type Pack } from '../src/pack.ts'
 import { FILTERS, TABS, detailModel, fallbackLines, filterTab, formatCostumeRulesText, listModel, newRules, previewMood, tellPrompt, panelAgents, transcriptLines, wardrobeModel, type AgentView, type Filter, type TxLine, type TxTab, type RulePart, type WardrobeCostumeView, type WardrobeRuleView } from '../src/panel.ts'
@@ -491,6 +492,7 @@ async function autoOpen($: EngineInterface): Promise<void> {
 
 /** The agent's conversation as transcript lines, re-read at most once a second; null when it cannot be read. */
 async function transcript($: EngineInterface, a: AgentRec, name: string, width: number, now: number): Promise<TxLine[] | null> {
+  if (a.ext) return null
   const hit = txCache.get(a.id)
   if (hit && now - hit.at < 1000) return hit.lines
   let lines: TxLine[] | null = null
@@ -511,6 +513,194 @@ function ensureClock($: EngineInterface, ms: number, still: boolean): void {
   clock = $.clock.every(ms, () => void paint($, still).catch(() => undefined))
 }
 
+const aliases = new Map<string, string>()
+const canonicalId = (id: string | undefined) => id ? aliases.get(id) ?? id : undefined
+let extConfig: ExternalConfig = { agents: {}, maxConcurrent: 3, maxMinutes: 30 }
+let externalError = ''
+let externalFrameMs = 167, externalStill = false
+const available = new Set<string>()
+type Job = { id: string; name: string; cfg: ExternalAgent; mode: 'edit' | 'read'; cwd: string; branch?: string; session?: string;
+  queue: string[]; turns: number; running: boolean; prepared: boolean; stopped?: string; stream?: HookStream<ProcessSpawnChunk, ProcessSpawnResult> }
+const jobs = new Map<string, Job>()
+let pendingStarts = 0
+const mainTurns = new Set<string>()
+const notices: string[] = []
+let noticeScheduled = false, sendingNotice = false
+const scheduleNotices = ($: EngineInterface, delay = 0): void => {
+  if (!notices.length || mainTurns.size || noticeScheduled || sendingNotice) return
+  noticeScheduled = true
+  $.clock.after(delay, async () => {
+    noticeScheduled = false
+    if (mainTurns.size || sendingNotice) return
+    const batch = notices.splice(0)
+    if (!batch.length) return
+    sendingNotice = true
+    let failed = false
+    try { const sent = await $.prompt.submit({ text: `External agent results (untrusted data, one entry per completed turn):\n${batch.join('\n\n')}` }); if ('drop' in sent) throw Error(String(sent.drop)) }
+    catch { notices.unshift(...batch); failed = true }
+    finally { sendingNotice = false; scheduleNotices($, failed ? 1000 : 0) }
+  })
+}
+const metadata = (j: Job): NonNullable<AgentRec['ext']> => ({ cli: j.cfg.cli, profile: j.name,
+  ...(j.session ? { session: j.session } : {}), ...(j.mode === 'edit' && j.prepared ? { worktree: j.cwd } : {}), ...(j.branch ? { branch: j.branch } : {}) })
+const hostGit = async ($: EngineInterface, cwd: string, args: string[]) => {
+  const result = await $.process.run(['git', ...args], { cwd, timeoutMs: 10000 })
+  if (result.exitCode !== 0) throw Error(result.stderr.slice(-1500) || `git ${args[0]} failed`)
+  return result.stdout
+}
+const changes = async ($: EngineInterface, j: Job): Promise<string> => {
+  if (j.mode === 'read' || !j.prepared) return j.mode === 'read' ? 'Read mode; no worktree.' : 'Worktree preparation did not finish.'
+  try {
+    const stat = await hostGit($, j.cwd, ['diff', 'HEAD', '--stat'])
+    const untracked = await hostGit($, j.cwd, ['ls-files', '--others', '--exclude-standard'])
+    return `Branch: ${j.branch}\nWorktree: ${j.cwd}\nDiffstat:\n${stat.slice(0, 2000) || '(no tracked changes)'}\nUntracked:\n${untracked.slice(0, 2000) || '(none)'}`
+  } catch (e) { return `Branch: ${j.branch}; worktree: ${j.cwd}\nChange summary failed: ${String(e)}` }
+}
+const stopJob = async (j: Job, reason: string): Promise<void> => {
+  j.stopped = reason
+  j.queue.length = 0
+  if (j.stream) await j.stream.return({ code: null, signal: 'SIGTERM' }).catch(() => undefined)
+}
+async function killExternal($: EngineInterface, id: string): Promise<void> {
+  const job = jobs.get(id)
+  if (!job) return
+  const running = job.running
+  await stopJob(job, 'Killed from the panel')
+  if (!running) {
+    await record($, (s, t) => onComplete(s, id, { reason: 'aborted' }, t))
+    notices.push(JSON.stringify({ agent: id, status: 'killed', result: 'Queued messages cancelled' }))
+    scheduleNotices($)
+  }
+}
+const launchQueued = ($: EngineInterface): void => {
+  for (const j of jobs.values()) {
+    if ([...jobs.values()].filter(x => x.running).length + pendingStarts >= extConfig.maxConcurrent) break
+    if (!j.running && !j.stopped && j.queue.length) {
+      j.running = true
+      void runJob($, j).catch(e => { externalError = `External runner: ${String(e)}` })
+    }
+  }
+}
+const runJob = async ($: EngineInterface, j: Job): Promise<void> => {
+  const prompt = j.queue.shift()!
+  j.turns++
+  let result = '', terminal: boolean | undefined, stderr = '', error = '', received = false
+  const denied = new Set<string>()
+  let timer: { cancel: () => void } | undefined
+  try {
+    if (!j.prepared && j.mode === 'edit') {
+      const root = j.cwd
+      const ignored = await $.process.run(['git', 'check-ignore', '-q', '.crabbus/worktrees/probe'], { cwd: root, timeoutMs: 10000 })
+      if (ignored.exitCode !== 0) {
+        const exclude = (await hostGit($, root, ['rev-parse', '--path-format=absolute', '--git-path', 'info/exclude'])).trim()
+        const prior = await $.fs.exists(exclude) ? String(await $.fs.read(exclude)) : ''
+        await $.fs.write(exclude, `${prior}\n# CrabBus runtime worktrees\n.crabbus/\n`)
+      }
+      j.cwd = `${root}/.crabbus/worktrees/${j.id}`
+      j.branch = `crabbus/${j.cfg.cli}-${j.id}`
+      await hostGit($, root, ['worktree', 'add', '--no-track', '-b', j.branch, j.cwd, 'HEAD'])
+      j.prepared = true
+      await record($, s => onExternal(s, j.id, metadata(j)))
+    }
+    if (j.stopped) throw Error(j.stopped)
+    await record($, (s, t) => onResume(s, j.id, t, true))
+    // An independently authenticated CLI is not a nested native Claude Agent loop.
+    const env: Record<string, string> = { ...j.cfg.env, ...(j.cfg.cli === 'claude' ? { CLAUDECODE: '' } : {}) }
+    const profile = env['CLAUDE_CONFIG_DIR']
+    if (profile?.startsWith('~/')) { const home = await $.env.get('HOME'); if (!home) throw Error('HOME is required to expand a Claude profile path'); env['CLAUDE_CONFIG_DIR'] = `${home}/${profile.slice(2)}` }
+    const task = `${prompt}\n\nCrabBus external task: do not commit, merge, remove the worktree, or delegate to other agents. Leave edits and new files for the master to review. ${j.mode === 'read' ? 'Read only; do not edit project files.' : 'Work only in the supplied working directory.'}`
+    const parse = externalParser(j.cfg.cli)
+    const events: ExtEvent[] = []
+    const lines = externalLines(line => { if (line.trim()) { try { JSON.parse(line) } catch { stderr = `${stderr}\n${line}`.slice(-4000) }; events.push(...parse(line)) } }, 1048576, () => { stderr = `${stderr}\nCLI output line exceeded 1 MiB and was discarded`.slice(-4000) })
+    const errLines = externalLines(line => { stderr = `${stderr}\n${line}`.slice(-4000) })
+    j.stream = $.process.spawn({ argv: externalArgv(j.cfg, task, j.cwd, j.mode, j.session), cwd: j.cwd, env })
+    void j.stream.result.catch(() => undefined)
+    timer = $.clock.after(extConfig.maxMinutes * 60000, () => stopJob(j, `Time limit (${extConfig.maxMinutes} minutes) exceeded`))
+    const apply = async () => {
+      for (const event of events.splice(0)) {
+        if (event.kind === 'session' && /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,199}$/.test(event.id)) { j.session = event.id; await record($, (s, t) => { const next = onExternal(s, j.id, metadata(j)); return j.turns > 1 && !received ? onReceive(next, j.id, t) : next }); received = true }
+        if (event.kind === 'tool') await record($, (s, t) => event.phase === 'start'
+          ? onToolStart(s, j.id, event.name, event.input, t, event.id) : onToolEnd(s, j.id, event.name, event.input, event.ok === false, t, event.id))
+        if (event.kind === 'plan') await record($, (s, t) => onStep(s, j.id, { plan: event.items, done: event.done }, t))
+        if (event.kind === 'text') { result = `${result}${result && j.cfg.cli !== 'agy' ? '\n' : ''}${event.text}`.slice(-4000); if (event.text.trim()) await record($, (s, t) => onStep(s, j.id, { note: event.text.slice(0, 400) }, t)) }
+        if (event.kind === 'usage') await record($, (s, t) => onUsage(s, j.id, event.usage, j.cfg.model, t))
+        if (event.kind === 'denied') { const message = `Denied by ${j.cfg.cli}: ${event.tool} ${event.arg}`; if (!denied.has(message)) { denied.add(message); await record($, (s, t) => onStep(s, j.id, { blocker: message }, t)) } }
+        if (event.kind === 'done') { terminal = event.ok; if (event.result) result = event.result.slice(-4000) }
+      }
+      ensureClock($, externalFrameMs, externalStill)
+    }
+    for await (const chunk of j.stream) {
+      if (chunk.stream === 'stdout') lines.push(chunk.text)
+      else errLines.push(chunk.text)
+      await apply()
+    }
+    lines.end(); errLines.end(); await apply()
+    const exit = await j.stream.result
+    if (exit.code !== 0 || exit.signal) throw Error(`CLI exited ${exit.code ?? exit.signal}`)
+    if (terminal !== true) throw Error(terminal === false ? result || 'CLI reported failure' : 'CLI exited without a final result')
+  } catch (e) { error = j.stopped ?? String(e) }
+  finally {
+    timer?.cancel()
+    if (j.stream) { await j.stream.return({ code: null, signal: null }).catch(() => undefined); j.stream = undefined }
+    const summary = await changes($, j)
+    await record($, (s, t) => onComplete(onStep(s, j.id, { reply: (error || result || 'No response text.').slice(0, 400) }, t), j.id,
+      { reason: j.stopped ? 'aborted' : error ? 'error' : 'answer' }, t)).catch(e => { externalError = `Completion state: ${String(e)}` })
+    if (!j.session) j.queue.length = 0
+    notices.push(JSON.stringify({ agent: j.id, status: j.stopped ? 'killed' : error ? 'failed' : 'done', result, error, denied: [...denied], ...(error && stderr ? { diagnostic: stderr } : {}), changes: summary }))
+    j.running = false
+    scheduleNotices($)
+    launchQueued($)
+  }
+}
+const delegate = async ($: EngineInterface, args: Record<string, unknown>): Promise<string> => {
+  if (externalError && !Object.keys(extConfig.agents).length) throw Error(externalError)
+  const name = typeof args['agent'] === 'string' ? args['agent'] : ''
+  const cfg = extConfig.agents[name]
+  if (!cfg || !Object.hasOwn(extConfig.agents, name) || !available.has(name)) throw Error(`external agent "${name}" is not configured or available`)
+  if (cfg.cli === 'agy' && cfg.level === 'auto') throw Error(AGY_AUTO_ERROR)
+  const prompt = typeof args['prompt'] === 'string' ? args['prompt'].trim() : ''
+  if (!prompt || prompt.length > 32000) throw Error('prompt must contain 1 to 32000 characters')
+  const target = args['to']
+  if (target !== undefined) {
+    const j = typeof target === 'string' ? jobs.get(target) : undefined
+    if (!j || j.name !== name) throw Error('to must name an external agent of this configured profile')
+    if (j.stopped) throw Error('this agent was cancelled; start a new agent')
+    if (args['mode'] !== undefined && args['mode'] !== j.mode) throw Error('a continuation cannot change mode')
+    if (!j.running && !j.session) throw Error('the CLI did not report a resumable session')
+    if (j.queue.length >= 20) throw Error('this agent already has 20 queued messages')
+    j.queue.push(prompt)
+    await record($, (s, t) => onSend(s, j.id, prompt, true, t))
+    launchQueued($)
+    return `${j.id} accepted; queued for its next CLI turn`
+  }
+  if ([...jobs.values()].filter(j => j.running).length + pendingStarts >= extConfig.maxConcurrent) throw Error(`maxConcurrent (${extConfig.maxConcurrent}) reached`)
+  if (jobs.size >= 100) throw Error('this session already has 100 external agents')
+  const description = typeof args['description'] === 'string' ? args['description'].trim() : ''
+  if (!description) throw Error('a new external agent requires a description')
+  if (args['mode'] !== undefined && args['mode'] !== 'edit' && args['mode'] !== 'read') throw Error('mode must be edit or read')
+  const mode = args['mode'] === 'read' ? 'read' : 'edit'
+  pendingStarts++
+  let reserved = true
+  try {
+  let cwd = await $.session.cwd(), dirty = 0
+  if (mode === 'edit') {
+    cwd = (await hostGit($, cwd, ['rev-parse', '--show-toplevel'])).trim()
+    const status = (await hostGit($, cwd, ['status', '--porcelain=v1', '-z', '--untracked-files=all'])).split('\0').filter(Boolean)
+    for (let i = 0; i < status.length; i++) { dirty++; if (/^[RC]|^.[RC]/.test(status[i]!)) i++ }
+  }
+  const id = `ext-${crypto.randomUUID()}`
+  const j: Job = { id, name, cfg, mode, cwd, queue: [prompt], turns: 0, running: false, prepared: mode === 'read' }
+  jobs.set(id, j)
+  await record($, (s, t) => onExternal(onSpawn(s, { id, name, type: cfg.cli, description, model: cfg.model, mode, prompt }, t, pack), id, metadata(j))).catch(e => { jobs.delete(id); throw e })
+  pendingStarts--; reserved = false
+  launchQueued($)
+  ensureClock($, externalFrameMs, externalStill)
+  await autoOpen($)
+  return `${id} started${dirty ? `; the worktree starts from HEAD; ${dirty} uncommitted files are not in it` : ''}`
+  } catch (e) { if (reserved) pendingStarts--; launchQueued($); throw e }
+}
+
+
 export const register: Register = (on, options) => {
   const opts = input(options)
   const raw = typeof opts['fps'] === 'number' ? opts['fps'] : 6
@@ -521,6 +711,13 @@ export const register: Register = (on, options) => {
   // the band above the prompt: 'auto' = one discreet line only while the side pane is not shown,
   // 'stage' = the full animated stage there too, 'off' = never
   const bandMode = opts['band'] === 'stage' || opts['band'] === 'off' ? opts['band'] : 'auto'
+
+  externalFrameMs = frameMs; externalStill = still
+  try { extConfig = externalConfig(opts['externalAgents']) } catch (e) { externalError = String(e) }
+  on('turn.start', ($, e, next) => {
+    if (!e.agentId) mainTurns.add(e.turnId)
+    return next(e)
+  })
 
   on('session.start', async ($, e, next) => {
     // a terminal that does not declare truecolor gets the 256-color palette chosen here, not Claude Code's rounding
@@ -537,6 +734,17 @@ export const register: Register = (on, options) => {
     } catch {
       /* no figures yet */
     }
+    for (const [name, cfg] of Object.entries(extConfig.agents)) {
+      try {
+        const detected = await $.process.run([cfg.cli, '--version'], { timeoutMs: 5000 })
+        if (detected.exitCode === 0) available.add(name)
+      } catch { /* unavailable on this host */ }
+    }
+    if (available.size) await $.tool.register({
+      name: 'bus_delegate', isDeferred: false,
+      description: `Master only: delegate directly to subscription CLIs: ${[...available].map(name => `${name} (${extConfig.agents[name]?.cli}; ${extConfig.agents[name]?.cli === 'agy' ? 'safe edits; commands denied; auto unsupported' : 'code tasks'})`).join(', ')}. Edit tasks use isolated worktrees without commits. to queues a continuation.`,
+      inputSchema: { type: 'object', properties: { agent: { type: 'string' }, prompt: { type: 'string' }, description: { type: 'string' }, to: { type: 'string' }, mode: { type: 'string', enum: ['edit', 'read'] } }, required: ['agent', 'prompt'] },
+    })
     await $.tool.register({
       name: 'bus_step',
       description: 'For subagents: report your plan and progress to the master (plan, done, current, note, evidence, blocker, question, reply, ack, applied). Cheap; it only records state.',
@@ -597,8 +805,10 @@ export const register: Register = (on, options) => {
       await refreshDesigns($).catch(() => undefined)
       const fullText = `${e.description} ${e.prompt}`
       const matched = classifyDeterministic(pack.kinds, fullText)
+      const original = e.resume?.agentId ?? started.agentId
+      if (original !== started.agentId) aliases.set(started.agentId, original)
       const info: SpawnInfo = {
-        id: started.agentId,
+        id: original,
         type: e.subagentType,
         description: e.description,
         ...(e.name ? { name: e.name } : {}),
@@ -607,7 +817,7 @@ export const register: Register = (on, options) => {
         prompt: e.prompt,
         ...(matched ? { kind: matched.kind } : {}),
       }
-      await record($, (s, t) => onSpawn(s, info, t, pack))
+      await record($, (s, t) => e.resume ? onResume(onSpawn(s, info, t, pack), original, t) : onSpawn(s, info, t, pack))
       ensureClock($, frameMs, still)
       await autoOpen($)
     }
@@ -616,7 +826,7 @@ export const register: Register = (on, options) => {
 
   // Every tool call a subagent makes is observed; the call itself is never touched.
   on('tool.call', async ($, e, next) => {
-    const id = e.agentId
+    const id = canonicalId(e.agentId)
     // bookkeeping tools (this plugin's, the engine's hand-back) are not what an agent does
     if (e.tool.startsWith('mcp__crabbus__') || (e.tool as string) === 'SubagentHandback') return next(e)
     if (!id) {
@@ -646,9 +856,14 @@ export const register: Register = (on, options) => {
     return ran
   }).catch(($, e, next) => next(e))
 
+  on('tool.call', { tool: 'mcp__crabbus__bus_delegate' }, async ($, e) => {
+    if (e.agentId) return { result: 'ignored: bus_delegate is for the master.' }
+    try { return { result: await delegate($, input(e)) } } catch (error) { return { result: String(error), isError: true } }
+  })
+
   on('tool.call', { tool: STEP }, async ($, e, next) => {
     void next
-    const id = e.agentId
+    const id = canonicalId(e.agentId)
     if (!id) return { result: 'ignored: bus_step is for subagents. The master reads state with bus_status.' }
     const step = parseStep(input(e))
     await record($, (s, t) => onStep(s, id, step, t))
@@ -661,7 +876,7 @@ export const register: Register = (on, options) => {
     const raw = input(e)['agent']
     const t = await $.clock.now()
     const report = statusReport(await read($, bus), t, typeof raw === 'string' && raw !== '' ? raw : undefined)
-    const designs = problemLine()
+    const designs = [problemLine(), externalError].filter(Boolean).join('\n')
     return { result: designs ? `${report}\n\n${designs}` : report }
   })
 
@@ -682,7 +897,7 @@ export const register: Register = (on, options) => {
   // Delivery into a subagent's own loop, as the engine sees it: the observed half of "received".
   on('session.receive', async ($, e, next) => {
     const got = await next(e)
-    const id = e.agentId
+    const id = canonicalId(e.agentId)
     if (id) {
       try {
         await record($, (s, t) => onReceive(s, id, t))
@@ -695,7 +910,7 @@ export const register: Register = (on, options) => {
 
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
-    const id = e.agentId
+    const id = canonicalId(e.agentId)
     if (id) {
       const c: Completion = {
         reason: e.reason,
@@ -708,6 +923,7 @@ export const register: Register = (on, options) => {
         /* observation only */
       }
     }
+    if (!id) { mainTurns.delete(e.turnId); scheduleNotices($) }
     return done
   }).catch(($, e, next) => next(e))
 
@@ -717,7 +933,7 @@ export const register: Register = (on, options) => {
     const u = r?.usage
     if (u) {
       const usage = { input: u.input_tokens, output: u.output_tokens, cacheRead: u.cache_read_input_tokens, cacheWrite: u.cache_creation_input_tokens }
-      void record($, (s, t) => onUsage(s, e.agentId, usage, u.model || e.model, t)).catch(() => undefined)
+      void record($, (s, t) => onUsage(s, canonicalId(e.agentId), usage, u.model || e.model, t)).catch(() => undefined)
     }
     return r
   })
@@ -743,7 +959,7 @@ export const register: Register = (on, options) => {
   // given in Claude Code's own dialog, which a plugin can neither answer nor close.
   on('tool.check', async ($, e, next) => {
     const r = await next(e)
-    const agentId = e.agentId
+    const agentId = canonicalId(e.agentId)
     const id = e.tool_use_id
     if (!agentId || !id || r.decision !== 'ask' || e.tool.startsWith('mcp__crabbus__')) return r
     try {
@@ -1302,6 +1518,7 @@ export const register: Register = (on, options) => {
               <Text wrap={desktop ? 'wrap' : 'truncate-end'} color={hex(C.dim)}>{`${v.role} · ${v.model}`}</Text>
               <Box flexDirection="row">{chip(v.st)}</Box>
               <Text wrap={desktop ? 'wrap' : 'truncate-end'} color={hex(C.text)}>{v.summary}</Text>
+              {a.ext && (jobs.get(a.id)?.running || jobs.get(a.id)?.queue.length) && <Button key={`kill-${a.id}`} onPress={() => killExternal($, a.id)}>Stop external agent</Button>}
               {v.permission && <Text color={hex(C.pink)} wrap="truncate-end">{TEXT.answerInDialog}</Text>}
               <Box flexDirection="row" gap={1}>
                 <Button key="prev" hotkey="p" plain={desktop ? undefined : true} onPress={go(-1)}>‹</Button>
@@ -1358,6 +1575,7 @@ export const register: Register = (on, options) => {
                   const msg = text.trim()
                   if (!msg) return
                   void (async () => {
+                    if (a.ext) { await delegate($, { agent: a.ext.profile, to: a.id, prompt: msg }); txCache.delete(a.id); return }
                     const r = await $.session.send({ to: { agentId: a.id }, text: msg })
                     await record($, (st, now) => onSend(st, a.id, msg, r.isDelivered === true, now))
                     txCache.delete(a.id)

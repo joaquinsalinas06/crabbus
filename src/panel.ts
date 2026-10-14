@@ -46,10 +46,10 @@ const BUS_TOOL = /^(mcp__crabbus__|SubagentHandback$)/
 /** Loops the bus adopted without seeing their spawn (engine forks, hook agents): kept in bus_status, left out of the panel. */
 export const panelAgents = (list: readonly AgentRec[]): AgentRec[] => list.filter(a => a.type !== 'unknown')
 
-export const agentCost = (a: AgentRec): number => (a.usage ? costOf(a.usage, a.usedModel ?? a.model) : 0)
+export const agentCost = (a: AgentRec): number => (!a.ext && a.usage ? costOf(a.usage, a.usedModel ?? a.model) : 0)
 
 export const agentCtx = (a: AgentRec): number | undefined =>
-  a.lastPrompt === undefined ? undefined : Math.min(100, Math.round((a.lastPrompt / windowOf(a.usedModel ?? a.model)) * 100))
+  a.ext || a.lastPrompt === undefined ? undefined : Math.min(100, Math.round((a.lastPrompt / windowOf(a.usedModel ?? a.model)) * 100))
 
 export const agentView = (s: BusState, a: AgentRec, idx: number, now: number, pack: Pack = BUILTIN): AgentView => {
   const st = uiStatus(s, a)
@@ -61,7 +61,7 @@ export const agentView = (s: BusState, a: AgentRec, idx: number, now: number, pa
   const tool = shown ? (a.lastTool as string) : a.status === 'done' ? 'finished' : a.status !== 'running' ? a.status : a.current ? 'now' : '—'
   const arg = shown ? (a.lastToolInput ?? '') : a.status === 'done' ? 'report delivered' : (a.current ?? '')
   const summary =
-    st === 'blocked' ? (permission ? `waiting for your answer in the dialog: ${permission.tool}` : `blocked: ${a.blockers[a.blockers.length - 1] ?? ''}`)
+    st === 'blocked' ? (permission ? `permission requested in Claude Code: ${permission.tool}` : `blocked: ${a.blockers[a.blockers.length - 1] ?? ''}`)
     : st === 'waiting' ? (a.questions.length > 0 ? `asks: ${a.questions[a.questions.length - 1]}` : 'waiting on a message')
     : st === 'done' ? `finished${a.endedAt !== undefined ? ` ${agoTxt(now - a.endedAt)}` : ''}`
     : st === 'failed' ? `ended (${a.status})${a.lastError ? `: ${a.lastError}` : ''}`
@@ -72,7 +72,7 @@ export const agentView = (s: BusState, a: AgentRec, idx: number, now: number, pa
     idx,
     name: shownName(a),
     color: costumeColor(pack, a.costume),
-    role: a.type,
+    role: a.ext ? `${a.ext.cli} · ${a.ext.profile}` : a.type,
     model: a.usedModel ?? a.model ?? 'model ?',
     st,
     tool,
@@ -87,7 +87,7 @@ export const agentView = (s: BusState, a: AgentRec, idx: number, now: number, pa
     ctxC: ctxColor(ctxPct ?? 0),
     tokTxt: a.tokensIn !== undefined ? `↑${fk(a.tokensIn)} ↓${fk(a.tokensOut ?? 0)}` : '↑– ↓–',
     cost,
-    costTxt: a.usage ? fc(cost, true) : '≈$–',
+    costTxt: a.ext ? 'subscription' : a.usage ? fc(cost, true) : '≈$–',
     ...(permission ? { permission } : {}),
     summary,
   }
@@ -255,7 +255,7 @@ export const detailModel = (s: BusState, a: AgentRec, list: readonly AgentRec[],
   const elapsedMs = (a.endedAt ?? now) - a.startedAt
   const prompt = promptTokens(u)
   const window = windowOf(model)
-  const used = a.lastPrompt ?? 0
+  const used = a.ext ? 0 : a.lastPrompt ?? 0
   const filled = Math.round((used / window) * 20)
   const runs = a.toolLog ?? []
   const tl = runs.slice(-18).map(r => (r.ok === false ? C.pink : toolColor(r.tool)))
@@ -266,8 +266,8 @@ export const detailModel = (s: BusState, a: AgentRec, list: readonly AgentRec[],
     pos: `${i + 1}/${list.length}`,
     elapsed: dur(elapsedMs),
     cost: {
-      parts: [['input', parts.input], ['output', parts.output], ['cache read', parts.cacheRead], ['cache write', parts.cacheWrite]].map(([l, x]) => ({ l: l as string, v: fc(x as number), pct: Math.round(((x as number) / biggest) * 100) })),
-      rate: a.usage ? `≈${fc(total / Math.max(1 / 60, elapsedMs / 60000))}/min · list prices` : 'no usage reported yet',
+      parts: a.ext ? [] : [['input', parts.input], ['output', parts.output], ['cache read', parts.cacheRead], ['cache write', parts.cacheWrite]].map(([l, x]) => ({ l: l as string, v: fc(x as number), pct: Math.round(((x as number) / biggest) * 100) })),
+      rate: a.ext ? 'Subscription · tokens only' : a.usage ? `≈${fc(total / Math.max(1 / 60, elapsedMs / 60000))}/min · list prices` : 'no usage reported yet',
     },
     tokens: {
       out: fk(u.output || (a.tokensOut ?? 0)),
@@ -279,7 +279,7 @@ export const detailModel = (s: BusState, a: AgentRec, list: readonly AgentRec[],
     ctx: {
       // one cell per 5 % of the window; the 80 % cell marks where compaction starts
       cells: [...Array(20)].map((_, k) => (k < filled ? ctxColor(v.ctxPct ?? 0) : k === 16 ? 0x4a2a38 : C.line)),
-      used: a.lastPrompt !== undefined ? `${fk(used)} / ${fk(window)}` : 'no request reported yet',
+      used: a.ext ? 'CLI context not reported' : a.lastPrompt !== undefined ? `${fk(used)} / ${fk(window)}` : 'no request reported yet',
     },
     timing: {
       start: clock(a.startedAt),
@@ -559,7 +559,7 @@ export const wardrobeModel = (pack: Pack, s: BusState, now: number): WardrobeMod
   const wearing: WardrobeAgent[] = running.map(a => ({
     id: a.id,
     name: shownName(a),
-    role: a.type,
+    role: a.ext ? `${a.ext.cli} · ${a.ext.profile}` : a.type,
     costume: a.costume,
     costumeColor: costumeColor(pack, a.costume),
     by: a.by ?? 'rotation',
