@@ -82,17 +82,74 @@ Everything a crab wears or does consists of **JSON data** in `~/.claude/crabbus/
 
 Before being used, each design runs through the **fit validator**: it is rendered across all actions and ticks, and rejected if it floats, overflows the card boundaries, covers the eyes unexpectedly, or lacks contrast against dark or light backgrounds. Your goal is to pass validation on the first try and look great.
 
+## Make It Look Good
+
+A design that passes the fit check can still look dead. These come from real designs that
+the person rejected, and what fixed them.
+
+**Start from references, not memory.** Search the web for photos of the thing and for pixel
+art of it at a small size (16-32 px). Write down the 2-3 features that make it readable
+(a capybara: round head, small dark ears at its corners, a long darker muzzle with a wide
+nose). Exaggerate those; drop everything else.
+
+**Match the crew.** The crew is front-facing, chibi, with two eyes looking at you. A design
+in another style (a side view, one small eye, half the card empty) looks flat and lifeless
+next to them even when it is well drawn. Fill the card like the built-in costumes do.
+
+**Build in this order, previewing after each step:**
+
+1. **Silhouette.** Get the outline right in one flat color first. It should be recognizable
+   as a shadow. Proportions matter more than detail: a head about as wide as the body reads
+   "chibi"; a head and body forming one oval reads "bread"; too wide reads "fat".
+2. **Volume.** Three tones per material, light from above: highlight on top edges, base,
+   shadow underneath and on the sides. A shadow line where two parts meet (a collar under
+   the head) separates them. Use flat, warm, saturated colors.
+3. **Details.** Eyes, nose, mouth, ears, paws: each a distinct color. Keep a pixel of space
+   between dark features, or they merge (a nose next to the eyes reads as sunglasses; a
+   dark dot near the eye reads as a second eye).
+4. **Life.** Give it motion (below).
+
+**Avoid what failed:**
+- Reshaping an existing body ("a crab with ears"): draw new creatures from scratch.
+- A heavy near-black outline: it dulls the sprite and vanishes on dark backgrounds. Use a
+  midtone edge where contrast is needed.
+- Checkerboard or one-pixel stripes on clothing: noisy at this size. Use blocks and wide
+  stripes (a red scarf with one cream stripe, not alternating pixels).
+- Pieces covering what identifies the character (a scarf over the whole chest, a hat over
+  the eyes).
+- Legs or props detached from the body by a gap: they read as floating dots.
+
+**Give it life.** Static designs feel dead next to the animated crew:
+- Every costume moves in `walk` (a tail or scarf end that sways, 2 drawings, `every` 2).
+- React to actions: something that happens while `reading`, `writing` or `testing`
+  (a nose that sniffs, a mouth that chews, a hat that tips). Use piece `anim`, or body
+  layer `frames` + `anim` for a creature's own parts.
+- An occasional idle twitch (`"period": 30-40` with one or two ticks): ears, whiskers.
+- Stay still in `sleep` (`"sleep": []`), or droop.
+- Jumps lift the sprite (`done`, `master.hop`, plays): near the top rows, move sideways,
+  never up, or the fit check rejects it.
+
+**Look before you show.** Preview at a large scale (`--scale 12` or more) and look at both
+backgrounds. Compare it side by side with a built-in costume: is it as big, as colorful,
+as alive? Then show the person the PNG and ask before installing. When they say it looks
+wrong, ask what (or look at their screenshot) and change that one thing.
+
 ## Workflow (Always Follow This)
 
-1. Understand what is needed and which **slot** it occupies (see table below). If something already occupies that slot in the target costume, note it: only one piece fits per slot.
-2. Write the JSON in the scratchpad (not directly in the designs folder yet).
-3. Preview and validate:
-   `node ~/uni/26-2/crabbus/tools/preview.ts --design <file-or-folder> [--costume <id>] --out <png>`
-   (Note: `--costume` also works, as well as legacy `--diseno` / `--disfraz`).
-   Prints fit issues in English (exits with status 1 if any issues exist) and renders the costume across all actions—on dark background at the top, light background at the bottom.
-4. Inspect the rendered PNG. Iterate until there are zero validation issues **and** the design is clearly recognizable.
-5. Present the PNG to the user and confirm before installing.
-6. Install by copying the JSON to the designs folder (or use `/costume import <file>`, which validates again). Confirm with `/costume list`.
+1. Decide: a skin on an existing body (the default) or a new creature (only when asked).
+   Find which **slot** each piece occupies (see table below); only one piece fits per slot.
+2. Gather references (above) and note the identifying features.
+3. Write the JSON in the scratchpad (not directly in the designs folder yet).
+4. Preview and validate with the plugin's `tools/preview.ts` (two folders up from this skill):
+   `node <plugin>/tools/preview.ts --design <file-or-folder> [--costume <id>] [--body <id>] --scale 12 --out <png>`
+   It prints fit issues in English (exits with status 1 if any) and renders the costume
+   across every action, dark background on top, light below.
+5. Inspect the PNG. Iterate silhouette, volume, details and life until there are zero
+   issues **and** it is recognizable and alive next to a built-in costume.
+6. Present the PNG to the person and confirm before installing.
+7. Install by copying the JSON to the designs folder (or `/costume import <file>`, which
+   validates again), add it to the rotation if they want to see it, and confirm with
+   `/costume list`.
 
 ## The Card: 18x14 Pixels, Crab at Rest
 
@@ -292,7 +349,7 @@ The same with a kind, so several rules can share the word list:
 - **Contiguous piece bodies**: Every pixel must connect to the body or neighboring pixel unless marked `"free": true`.
 - **Preserve eyes**: Keep columns x 4–6 and 11–13 clear across rows 7–9 unless intentionally masked with `"coversEyes": true`.
 - **Hand-held props**: Anchor `claw.left` or `claw.right`, handle touching claw coordinates (x 1-2 or 15-16, rows 8-9).
-- **Subtle animation**: 2–4 drawings, `every` 1–2. Movement in `walk` adds life; keep stationary in `sleep` (`"sleep": []`).
+- **Subtle animation**: 2–4 drawings, `every` 1–2 (see Make It Look Good).
 - **Sharing**: `/costume export <id>` bundles costume and pieces into a `.crab.json` file (also compatible with legacy `.cangrejo.json`); import with `/costume import <file>`.
 
 ## Troubleshooting
