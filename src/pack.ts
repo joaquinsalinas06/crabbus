@@ -13,6 +13,7 @@
 import { CARD_H, CARD_W, mix, stampWith, type Put } from './canvas.ts'
 import { normalizeDesignJson, resolveLegacyId } from './legacy.ts'
 import { ANCHORS, BODY_LAYER, CLAY, EYES, FACE_SLOTS, POSE0, SLOTS, TAG, anchorOffset, drawCrab, mirrorPose, slotLayer, turned, type Anchor, type Pose, type Slot } from './rig.ts'
+import type { KindDef } from './kinds.ts'
 
 export const SLEEP_MS = 8000 // after this, a finished agent dozes instead of cheering
 export const ERROR_MS = 3000 // a failed tool shows as an error this long
@@ -79,7 +80,19 @@ export type Action = {
 }
 
 export type Rule = {
-  if: { type?: RegExp; name?: RegExp; description?: RegExp; model?: RegExp; from?: number; to?: number }
+  origin: string
+  ruleIdx: number
+  if: {
+    type?: RegExp
+    name?: RegExp
+    description?: RegExp
+    model?: RegExp
+    prompt?: RegExp
+    mode?: RegExp
+    kind?: string
+    from?: number
+    to?: number
+  }
   costume: string
   ifFree: boolean
   nickname?: string
@@ -97,9 +110,23 @@ export type Pack = {
   labels: Record<string, string>
   problems: Problem[]
   rulesSource: unknown[]
+  master?: string
+  kinds?: Record<string, KindDef>
+  rulesFiles: string[]
 }
 
-export const emptyPack = (): Pack => ({ pieces: {}, costumes: {}, actions: {}, order: [], active: [], rules: [], labels: {}, problems: [], rulesSource: [] })
+export const emptyPack = (): Pack => ({
+  pieces: {},
+  costumes: {},
+  actions: {},
+  order: [],
+  active: [],
+  rules: [],
+  labels: {},
+  problems: [],
+  rulesSource: [],
+  rulesFiles: [],
+})
 
 // ---- reading JSON: every field is checked, the file names the problem in English
 
@@ -465,7 +492,22 @@ const monthDay = (v: unknown, where: string): number => {
   return n
 }
 
-const parseRules = (o: Obj): { active?: string[]; rules: Rule[]; labels: Record<string, string> } => {
+const parseRules = (o: Obj, origin = 'rules'): { active?: string[]; rules: Rule[]; labels: Record<string, string>; master?: string; kinds?: Record<string, KindDef> } => {
+  const master = str(o, 'master', true)
+  const kinds: Record<string, KindDef> = {}
+  const rawKinds = o['kinds']
+  if (rawKinds !== undefined) {
+    if (!isObj(rawKinds)) bad('"kinds" must be a kind -> { words, description } object')
+    for (const [k, v] of Object.entries(rawKinds as Obj)) {
+      if (!ID.test(k)) bad(`kinds.${k}: kind identifier must be lowercase alphanumeric, dash, dot or underscore (got "${k}")`)
+      if (!isObj(v)) bad(`kinds.${k}: must be an object with "words": [...]`)
+      const rawWords = v['words']
+      if (!Array.isArray(rawWords) || rawWords.length === 0) bad(`kinds.${k}: "words" must be a non-empty list of regular expressions`)
+      const words = rawWords.map((w, idx) => regex(w, `kinds.${k}.words[${idx}]`))
+      const desc = str(v, 'description', true)
+      kinds[k] = { words, ...(desc ? { description: desc } : {}) }
+    }
+  }
   const list = o['rules']
   if (list !== undefined && !Array.isArray(list)) bad('"rules" must be a list')
   const rules = ((list as unknown[] | undefined) ?? []).map((r, i): Rule => {
@@ -474,12 +516,27 @@ const parseRules = (o: Obj): { active?: string[]; rules: Rule[]; labels: Record<
     const cond = r['if'] as Obj
     const out: Rule['if'] = {}
     for (const [k, v] of Object.entries(cond)) {
-      if (k === 'type' || k === 'name' || k === 'description' || k === 'model') out[k] = regex(v, `${w}.if.${k}`)
-      else if (k === 'from' || k === 'to') out[k] = monthDay(v, `${w}.if.${k}`)
-      else bad(`${w}.if: "${k}" is not a valid criterion (type, name, description, model, from, to)`)
+      if (k === 'type' || k === 'name' || k === 'description' || k === 'model' || k === 'prompt' || k === 'mode') {
+        out[k] = regex(v, `${w}.if.${k}`)
+      } else if (k === 'kind') {
+        const kd = str(cond, 'kind') as string
+        if (!ID.test(kd)) bad(`${w}.if.kind: must be an identifier (got "${kd}")`)
+        out.kind = kd
+      } else if (k === 'from' || k === 'to') {
+        out[k] = monthDay(v, `${w}.if.${k}`)
+      } else {
+        bad(`${w}.if: "${k}" is not a valid criterion (type, name, description, model, prompt, mode, kind, from, to)`)
+      }
     }
     if ((out.from === undefined) !== (out.to === undefined)) bad(`${w}.if: "from" and "to" must be used together`)
-    return { if: out, costume: str(r, 'costume') as string, ifFree: bool(r, 'ifFree'), ...(str(r, 'nickname', true) ? { nickname: str(r, 'nickname') as string } : {}) }
+    return {
+      origin,
+      ruleIdx: i + 1,
+      if: out,
+      costume: str(r, 'costume') as string,
+      ifFree: bool(r, 'ifFree'),
+      ...(str(r, 'nickname', true) ? { nickname: str(r, 'nickname') as string } : {}),
+    }
   })
   const labels: Record<string, string> = {}
   const t = o['labels']
@@ -490,7 +547,13 @@ const parseRules = (o: Obj): { active?: string[]; rules: Rule[]; labels: Record<
       labels[k] = v as string
     }
   }
-  return { ...(o['active'] !== undefined ? { active: strList(o, 'active') } : {}), rules, labels }
+  return {
+    ...(o['active'] !== undefined ? { active: strList(o, 'active') } : {}),
+    rules,
+    labels,
+    ...(master ? { master } : {}),
+    ...(Object.keys(kinds).length > 0 ? { kinds } : {}),
+  }
 }
 
 // ---- building a pack from files (over a base pack: same id replaces)
@@ -508,6 +571,9 @@ export const compilePack = (files: readonly DesignFile[], base: Pack = emptyPack
     labels: { ...base.labels },
     problems: [],
     rulesSource: [...base.rulesSource],
+    ...(base.master ? { master: base.master } : {}),
+    kinds: { ...(base.kinds ?? {}) },
+    rulesFiles: [...base.rulesFiles],
   }
   const userRules: Rule[] = []
   const take = (raw: unknown, file: string): void => {
@@ -530,11 +596,14 @@ export const compilePack = (files: readonly DesignFile[], base: Pack = emptyPack
         const x = parseAction(o, file)
         p.actions[x.id] = x
       } else if (type === 'rules') {
-        const r = parseRules(o)
+        const r = parseRules(o, file)
         if (r.active) p.active = r.active
+        if (r.master) p.master = r.master
+        if (r.kinds) Object.assign(p.kinds!, r.kinds)
         userRules.push(...r.rules)
         Object.assign(p.labels, r.labels)
         p.rulesSource.push(o)
+        if (!p.rulesFiles.includes(file)) p.rulesFiles.push(file)
       } else bad(`"type" must be piece, costume, action, rules or bundle (got "${String(type)}")`)
     } catch (e) {
       if (!(e instanceof Bad)) throw e
@@ -578,7 +647,11 @@ const link = (p: Pack): Pack => {
       delete p.costumes[d.id]
     }
   }
-  for (const r of p.rules) if (!p.costumes[r.costume]) p.problems.push({ file: 'rules', msg: `a rule uses costume "${r.costume}", which does not exist`, fatal: false })
+  if (p.master && !p.costumes[p.master]) p.problems.push({ file: 'rules', msg: `"master" costume "${p.master}" does not exist`, fatal: false })
+  for (const r of p.rules) {
+    if (!p.costumes[r.costume]) p.problems.push({ file: r.origin, msg: `a rule uses costume "${r.costume}", which does not exist`, fatal: false })
+    if (r.if.kind && (!p.kinds || !p.kinds[r.if.kind])) p.problems.push({ file: r.origin, msg: `a rule uses kind "${r.if.kind}", which is not defined in "kinds"`, fatal: false })
+  }
   for (const a of p.active) if (!p.costumes[a]) p.problems.push({ file: 'rules', msg: `"active" includes "${a}", which does not exist`, fatal: false })
   for (const a of Object.values(p.actions)) {
     for (const to of a.play?.pass?.to ?? [])
@@ -766,7 +839,7 @@ export const hash = (s: string): number => {
   return h >>> 0
 }
 
-export type Who = { id: string; type: string; description: string; name?: string; model?: string }
+export type Who = { id: string; type: string; description: string; name?: string; model?: string; mode?: string; prompt?: string; kind?: string }
 
 const inDates = (cond: Rule['if'], now: number): boolean => {
   if (cond.from === undefined || cond.to === undefined) return true
@@ -782,23 +855,26 @@ const ruleMatches = (r: Rule, w: Who, now: number): boolean => {
   if (cond.name && !cond.name.test(w.name ?? '')) return false
   if (cond.description && !cond.description.test(w.description)) return false
   if (cond.model && !cond.model.test(w.model ?? '')) return false
+  if (cond.mode && !cond.mode.test(w.mode ?? '')) return false
+  if (cond.prompt && !cond.prompt.test((w.prompt ?? '').slice(0, 400))) return false
+  if (cond.kind && cond.kind !== w.kind) return false
   return inDates(cond, now)
 }
 
-export const resolveCostume = (pack: Pack, w: Who, taken: readonly string[], now: number): { costume: string; nickname?: string } => {
+export const resolveCostume = (pack: Pack, w: Who, taken: readonly string[], now: number): { costume: string; nickname?: string; by: string } => {
   for (const r of pack.rules) {
     if (!pack.costumes[r.costume] || !ruleMatches(r, w, now)) continue
     if (r.ifFree && taken.includes(r.costume)) continue
-    return { costume: r.costume, ...(r.nickname ? { nickname: r.nickname } : {}) }
+    return { costume: r.costume, ...(r.nickname ? { nickname: r.nickname } : {}), by: `${r.origin} #${r.ruleIdx}` }
   }
   const list = pack.active.filter(id => pack.costumes[id])
-  if (list.length === 0) return { costume: FALLBACK_COSTUME }
+  if (list.length === 0) return { costume: FALLBACK_COSTUME, by: 'fallback' }
   const start = hash(w.id) % list.length
   for (let i = 0; i < list.length; i++) {
     const c = list[(start + i) % list.length] as string
-    if (!taken.includes(c)) return { costume: c }
+    if (!taken.includes(c)) return { costume: c, by: 'rotation' }
   }
-  return { costume: list[start] as string }
+  return { costume: list[start] as string, by: 'rotation' }
 }
 
 // ---- sharing: a costume (or piece, or action) and everything it needs, as one file

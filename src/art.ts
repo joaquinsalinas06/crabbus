@@ -24,9 +24,12 @@ export const poseFor = (mood: Mood, t: number, pack: Pack = BUILTIN): Pose => po
 export const drawAgent = (c: Canvas, ox: number, oy: number, costume: Costume, mood: Mood, t: number, pack: Pack = BUILTIN): void =>
   renderAgent(putOn(c), ox, oy, pack, costume, mood, t)
 
-/** The master: the `master` costume, busy while any agent runs. */
+/** The costume the master wears: the one the rules name, else the `master` costume, else `other`. Every drawing of it uses this. */
+export const masterCostume = (pack: Pack): Costume => (pack.master && pack.costumes[pack.master] ? pack.master : pack.costumes['master'] ? 'master' : 'other')
+
+/** The master in its costume, busy while any agent runs. */
 export const drawMaster = (c: Canvas, ox: number, oy: number, busy: boolean, t: number, pack: Pack = BUILTIN): void =>
-  renderAgent(putOn(c), ox, oy, pack, pack.costumes['master'] ? 'master' : 'other', busy ? 'master.busy' : 'master.free', t)
+  renderAgent(putOn(c), ox, oy, pack, masterCostume(pack), busy ? 'master.busy' : 'master.free', t)
 
 /** A 5x4 envelope, paper with a flap in `flap`. */
 export const drawEnvelope = (c: Canvas, x: number, y: number, flap: number): void => {

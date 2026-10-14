@@ -9,6 +9,12 @@ test('model: costumes differ across three simultaneous general-purpose agents', 
   assert.equal(costumeFor('Explore', 'x'), 'explore')
 })
 
+test('model: onSpawn records costume attribution in by', () => {
+  const s = onSpawn(emptyState(), { id: 'a1', type: 'Explore', description: 'scout' }, 0)
+  assert.equal(s.agents['a1']?.costume, 'explore')
+  assert.equal(s.agents['a1']?.by, '(built-in) #6')
+})
+
 test('model: classify maps tools to observed activity', () => {
   assert.equal(classify('Read'), 'reading')
   assert.equal(classify('Edit'), 'writing')

@@ -3,7 +3,7 @@
 // Everything drawn comes from recorded facts (model.ts). A mood is chosen from what hooks observed or
 // what the agent declared; when nothing specific is known the crab just walks.
 
-import { CARD_H, CARD_W, canvas, drawAgent, drawEnvelope, drawMaster, drawQuestion, set, stamp, type Canvas, type Mood } from './art.ts'
+import { CARD_H, CARD_W, canvas, drawAgent, drawEnvelope, drawMaster, drawQuestion, masterCostume, set, stamp, type Canvas, type Mood } from './art.ts'
 import { BUILTIN } from './builtin.ts'
 import { desaturate, halve } from './canvas.ts'
 import { uiStatus, type AgentRec, type BusState } from './model.ts'
@@ -79,7 +79,7 @@ export const compose = (s: BusState, l: Extract<Layout, { kind: 'stage' }>, now:
   const mx = cardX(masterIdx)
   const busy = l.agents.some(a => a.status === 'running')
   const mp = playing?.('')
-  if (mp) drawAgent(c, mx, 0, pack.costumes['master'] ? 'master' : 'other', mp.action, mp.t, pack)
+  if (mp) drawAgent(c, mx, 0, masterCostume(pack), mp.action, mp.t, pack)
   else drawMaster(c, mx, 0, busy, reduceMotion ? 1 : tick, pack)
   // envelopes: flying from the master to the agent until delivered, then resting over its head until acknowledged
   for (const m of liveMsgs(s, now)) {
@@ -218,7 +218,7 @@ export const miniCard = (s: BusState, a: AgentRec, now: number, tick: number, re
 
 export const masterCard = (s: BusState, now: number, tick: number, pack: Pack = BUILTIN, play?: { action: string; t: number }): Canvas => {
   const c = canvas(CARD_W, CARD_H)
-  if (play) drawAgent(c, 0, 0, pack.costumes['master'] ? 'master' : 'other', play.action, play.t, pack)
+  if (play) drawAgent(c, 0, 0, masterCostume(pack), play.action, play.t, pack)
   // busy while it works itself (a tool in flight) or any of its agents runs
   else drawMaster(c, 0, 0, s.session?.inTool === true || onStage(s, now).some(a => a.status === 'running'), tick, pack)
   return c
