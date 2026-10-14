@@ -27,6 +27,8 @@ export type AgentRec = {
   costume: string
   /** A display name a wardrobe rule gave this agent. */
   nickname?: string
+  /** Which rule or rotation assigned this costume (e.g. "rules.json #1", "builtin #2", "rotation"). */
+  by?: string
   /** The permission mode it inherited at spawn (`default`, `auto`, ...): who decides its asks. */
   mode?: string
   status: Status
@@ -187,7 +189,7 @@ export const uiStatus = (s: BusState, a: AgentRec): UiStatus => {
   return a.inTool ? 'working' : 'thinking'
 }
 
-export type SpawnInfo = { id: string; type: string; description: string; name?: string; model?: string; mode?: string }
+export type SpawnInfo = { id: string; type: string; description: string; name?: string; model?: string; mode?: string; prompt?: string; kind?: string }
 
 export const onSpawn = (s: BusState, i: SpawnInfo, now: number, pack: Pack = BUILTIN): BusState => {
   if (s.agents[i.id]) return s
@@ -202,6 +204,7 @@ export const onSpawn = (s: BusState, i: SpawnInfo, now: number, pack: Pack = BUI
     ...(i.mode ? { mode: clip(i.mode, 40) } : {}),
     costume: look.costume,
     ...(look.nickname ? { nickname: look.nickname } : {}),
+    by: look.by,
     status: 'running',
     startedAt: now,
     lastEventAt: now,

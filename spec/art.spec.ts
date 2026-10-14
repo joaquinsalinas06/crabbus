@@ -174,3 +174,19 @@ test('pane: agents that finished long ago leave the list for one line; t shows t
   assert.equal(namesThatFit(['5: backend testerx', '6: frontend reader', '7: writerxx', '8: tester'], 50, 5), 2)
   assert.equal(namesThatFit(['5: a', '6: b'], 60, 5), 2)
 })
+
+test('the master wears the costume the rules name in every drawing, plays included', async () => {
+  const { loadPack } = await import('../src/fit.ts')
+  const { BUILTIN } = await import('../src/builtin.ts')
+  const { masterCostume } = await import('../src/art.ts')
+  const { masterCard } = await import('../src/scene.ts')
+  const { emptyState } = await import('../src/model.ts')
+  const p = loadPack([{ file: 'r.json', text: JSON.stringify({ type: 'rules', master: 'heavy' }) }], BUILTIN)
+  assert.equal(masterCostume(p), 'heavy')
+  assert.equal(masterCostume(BUILTIN), 'master')
+  // during a play the card is drawn in the chosen costume, the same as the plain heavy crab in that play
+  const s = emptyState()
+  const played = masterCard(s, 0, 3, p, { action: 'master.wave', t: 3 })
+  const plain = masterCard(s, 0, 3, BUILTIN, { action: 'master.wave', t: 3 })
+  assert.notDeepEqual(Array.from(played.px ?? []), Array.from(plain.px ?? []))
+})

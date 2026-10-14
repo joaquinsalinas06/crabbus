@@ -5,6 +5,7 @@ import { canvas, putOn } from '../src/canvas.ts'
 import { checkPack, loadPack } from '../src/fit.ts'
 import { bundle, compilePack, labelOf, renderAgent, resolveAction, resolveCostume, type Facts, type Pack } from '../src/pack.ts'
 import { checkEnglish } from '../tools/check-english.ts'
+import { drawMaster } from '../src/art.ts'
 
 const file = (json: unknown, name = 'test.json') => ({ file: name, json })
 const load = (...items: unknown[]): Pack => loadPack(items.map((j, i) => file(j, `f${i}.json`)), BUILTIN)
@@ -141,7 +142,7 @@ test('wardrobe: user rules come first, then built-in ones, then rotation; date r
   const june = Date.UTC(2026, 5, 15, 12)
   const xmas = Date.UTC(2026, 11, 24, 12)
   const jan = Date.UTC(2027, 0, 3, 12)
-  assert.deepEqual(resolveCostume(p, { id: 'a', type: 'general-purpose', description: 'x', name: 'tester' }, [], june), { costume: 'medium', nickname: 'Chef Tester' })
+  assert.deepEqual(resolveCostume(p, { id: 'a', type: 'general-purpose', description: 'x', name: 'tester' }, [], june), { costume: 'medium', nickname: 'Chef Tester', by: 'f2.json #1' })
   assert.equal(resolveCostume(p, { id: 'a', type: 'Explore', description: 'x' }, [], xmas).costume, 'french')
   assert.equal(resolveCostume(p, { id: 'a', type: 'Explore', description: 'x' }, [], jan).costume, 'french')
   assert.equal(resolveCostume(p, { id: 'a', type: 'Explore', description: 'x' }, [], june).costume, 'explore', 'built-in type rule')
@@ -162,6 +163,54 @@ test('compile: a user file replaces a built-in by id', () => {
   const p = compilePack([file({ type: 'costume', id: 'medium', name: 'blue chef', color: '#0000ff', pieces: ['chef-hat'] })], BUILTIN)
   assert.equal(p.costumes['medium']?.name, 'blue chef')
   assert.equal(p.costumes['heavy']?.name, 'detective')
+})
+
+test('rules: matches prompt and mode criteria', () => {
+  const p = load(
+    BERET, costume('french', ['beret']),
+    {
+      type: 'rules',
+      rules: [
+        { if: { prompt: 'refactor' }, costume: 'french' },
+        { if: { mode: 'acceptEdits' }, costume: 'medium' },
+      ],
+    },
+  )
+  assert.equal(resolveCostume(p, { id: 'a', type: 'general-purpose', description: 'desc', prompt: 'please refactor this' }, [], 0).costume, 'french')
+  assert.equal(resolveCostume(p, { id: 'b', type: 'general-purpose', description: 'desc', mode: 'acceptEdits' }, [], 0).costume, 'medium')
+})
+
+test('rules: matches kind criteria and links kinds', () => {
+  const p = load(
+    BERET, costume('french', ['beret']),
+    {
+      type: 'rules',
+      kinds: {
+        planning: { words: ['plan', 'design'], description: 'planning task' },
+      },
+      rules: [
+        { if: { kind: 'planning' }, costume: 'french' },
+      ],
+    },
+  )
+  assert.equal(resolveCostume(p, { id: 'a', type: 'general-purpose', description: 'desc', kind: 'planning' }, [], 0).costume, 'french')
+  assert.equal(resolveCostume(p, { id: 'b', type: 'general-purpose', description: 'desc', kind: 'debugging' }, [], 0).costume !== 'french', true)
+})
+
+test('rules: master costume configuration in rules and drawMaster', () => {
+  const p = load(
+    BERET, costume('french', ['beret']),
+    { type: 'rules', master: 'french' },
+  )
+  assert.equal(p.master, 'french')
+  const c = canvas(18, 14)
+  drawMaster(c, 0, 0, false, 0, p)
+  assert.ok(c.px.some(b => b !== 0))
+})
+
+test('rules: invalid criterion reports clear error message', () => {
+  const p = load({ type: 'rules', rules: [{ if: { invalidField: 'test' }, costume: 'french' }] })
+  assert.match(msgs(p), /is not a valid criterion \(type, name, description, model, prompt, mode, kind, from, to\)/)
 })
 
 // legacy-spanish-test-start
