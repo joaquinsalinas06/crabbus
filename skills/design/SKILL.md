@@ -16,12 +16,14 @@ that body and stop there.
 
 1. Look at real references first: photos of the animal, and pixel art of it at a similar
    size (search the web). Note what makes it readable: silhouette, proportions, the 2-3
-   features that identify it (a capybara: big blocky head held forward, blunt darker muzzle,
-   small ear at the back of the head, barrel body, short dark legs).
-2. Draw it **from scratch in its natural view** (a quadruped in profile, not the crab's
-   front view). Do not start from the crab: a reshaped crab reads as a crab.
-3. Give it volume: a dark outline (palette), a highlight along the top, base, a shadow
-   underneath, a separate darker muzzle or face patch, near legs and darker far legs.
+   features that identify it (a capybara from the front: a round head with small dark ears
+   at its corners, a long darker muzzle with a wide nose on top, a pear-shaped body).
+2. Draw it **from scratch**, front-facing and chibi like the rest of the crew (a big head
+   with two eyes that blink and look, a body below, filling the card). Do not start from
+   the crab: a reshaped crab reads as a crab. A side view reads flat at this size.
+3. Give it volume with flat, warm colors: a highlight along the top, base, a shadow
+   under the head (a collar line) and on the sides, a lighter chest, a separate muzzle
+   or face patch, dark ears and paws. Avoid a heavy dark outline: it dulls the sprite.
    Use the body `palette` for fixed colors (outline, nose, ear, legs) and `color` for its
    base. Look at the built-in `capybara` (`/costume export capybara`) as a worked example.
 4. Preview it bare, look at the PNG at a large scale, and iterate until it is recognizable.

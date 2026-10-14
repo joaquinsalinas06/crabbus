@@ -13,7 +13,7 @@ const robot = () => JSON.parse(JSON.stringify(BODIES.find((b: any) => b.id === '
 const on = (body: string, id = 'other') => ({ file: `${id}-${body}.json`, json: { ...(BUILTIN.costumes[id]!.source as object), body: { id: body } } })
 const capybaraSkin = () => ({ file: 'capybara-scarf.json', json: { type: 'bundle', items: [
   { type: 'piece', id: 'capybara-scarf', name: 'wool scarf', body: 'capybara', slot: 'neck', anchor: 'body',
-    layers: [{ pos: [7, 5], drawings: { a: ['rr...', 'cc...', 'rrrr.', '..rr.', '..c..', '..r..'] }, palette: { r: '#c0392b', c: '#efe2c2' } }] },
+    layers: [{ pos: [4, 8], drawings: { a: ['rrrrrrrrrr', '......rr..', '......cc..', '......rr..'] }, palette: { r: '#c0392b', c: '#efe2c2' } }] },
   { type: 'costume', id: 'capybara-scarf', name: 'capybara with scarf', color: '#cf7f45', body: { id: 'capybara' }, pieces: ['capybara-scarf'] },
 ] } })
 

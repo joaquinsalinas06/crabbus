@@ -447,8 +447,8 @@ DockCrab / Clawdy. Every sprite was redrawn by hand for the terminal. See
 
 ### Custom creatures
 
-CrabBus includes `crab`, `robot` and `capybara` bodies (the capybara is a side-view
-quadruped with its own colors and legs). Each skin names its body (`"body": { "id": "capybara" }`);
+CrabBus includes `crab`, `robot` and `capybara` bodies (the capybara is a front-facing
+chibi with its own colors, muzzle and paws). Each skin names its body (`"body": { "id": "capybara" }`);
 a skin without one is a crab, so one crew can mix crabs, robots and capybaras. The wardrobe
 changes the picked skin's body; incompatible choices show their fit reason and cannot be
 selected. Built-in costume changes create user overrides. Pieces can be drawn for one body
