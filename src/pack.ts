@@ -12,7 +12,7 @@
 
 import { CARD_H, CARD_W, mix, stampWith, type Put } from './canvas.ts'
 import { normalizeDesignJson, resolveLegacyId } from './legacy.ts'
-import { ANCHORS, BODY_LAYER, CLAY, EYES, FACE_SLOTS, POSE0, SLOTS, TAG, bodyAnchorOffset, drawBody, mirrorPose, slotLayer, turned, type Anchor, type Pose, type Slot, type BodyDef, type BodyMotion } from './rig.ts'
+import { ANCHORS, BODY_LAYER, CLAY, EYES, FACE_SLOTS, POSE0, SLOTS, TAG, anchorShift, bodyAnchorMotion, bodyAnchorOffset, drawBody, mirrorPose, slotLayer, turned, type Anchor, type Pose, type Slot, type BodyDef, type BodyMotion } from './rig.ts'
 import type { KindDef } from './kinds.ts'
 
 export const SLEEP_MS = 8000 // after this, a finished agent dozes instead of cheering
@@ -49,11 +49,13 @@ export type Piece = {
   free: boolean
   coversAction: string[]
   occupies: Slot[]
+  /** The body it is drawn on, in that body's own coordinates; absent: drawn on the resting crab. */
+  body?: string
   origin: string
   source: unknown
 }
 
-export type CostumeDef = { id: string; name: string; color: number; body: number; bodyId?: string; eyes?: number; pieces: string[]; origin: string; source: unknown }
+export type CostumeDef = { id: string; name: string; color: number; body: number; ownColor?: boolean; bodyId?: string; eyes?: number; pieces: string[]; origin: string; source: unknown }
 
 export const STATES = ['asleep', 'finished', 'failed', 'blocked', 'error', 'thinking', 'working', 'starting', 'tests-ok'] as const
 export type State = (typeof STATES)[number]
@@ -102,7 +104,6 @@ export type Problem = { costume?: string; body?: string; file: string; id?: stri
 
 export type Pack = {
   bodies: Record<string, BodyDef>
-  defaultBody?: string
   pieces: Record<string, Piece>
   costumes: Record<string, CostumeDef>
   actions: Record<string, Action>
@@ -409,6 +410,7 @@ const parsePiece = (o: Obj, origin: string): Piece => {
     free: bool(o, 'free'),
     coversAction: strList(o, 'coversAction'),
     occupies,
+    ...(str(o, 'body', true) ? { body: str(o, 'body') as string } : {}),
     origin,
     source: o,
   }
@@ -427,13 +429,24 @@ const parseBody = (o: Obj, origin: string): BodyDef => {
     if (!BODY_MOTIONS.includes(v as BodyMotion)) return bad('body motion must be body, ground, claw.left, claw.right or card')
     return v as BodyMotion
   }
+  // the body's own fixed colors: one character each, beside the H/B/S roles that follow the costume's color
+  const palette: Record<string, number> = {}
+  if (o['palette'] !== undefined) {
+    const pal = o['palette']
+    if (!isObj(pal) || Object.keys(pal).length > 12) return bad('body palette must map up to 12 characters to "#rrggbb" colors')
+    for (const [k, v] of Object.entries(pal)) {
+      if (k.length !== 1 || 'HBS. '.includes(k)) bad(`body palette key "${k}" must be one character other than H, B, S, dot or space`)
+      palette[k] = parseColor(v, `palette.${k}`)
+    }
+  }
+  const allowed = new Set(['H', 'B', 'S', '.', ' ', ...Object.keys(palette)])
   const raw = o['layers']
   if (!Array.isArray(raw) || raw.length < 1 || raw.length > 64) return bad('body layers must contain 1 to 64 drawings')
   const layers = raw.map((v, i) => {
     if (!isObj(v)) return bad(`body layer ${i}: must be an object`)
     const point = coord(v, `body layer ${i}`)
     const rows = strList(v, 'rows')
-    if (rows.length < 1 || rows.length > CARD_H || rows.some(row => !/^[HBS. ]{1,18}$/.test(row))) bad('body rows must contain 1 to 14 rows of 1 to 18 H/B/S/dot/space pixels')
+    if (rows.length < 1 || rows.length > CARD_H || rows.some(row => row.length < 1 || row.length > CARD_W || [...row].some(ch => !allowed.has(ch)))) bad('body rows must contain 1 to 14 rows of 1 to 18 pixels: H, B, S, dot, space or a body palette character')
     if (rows.length + point.y > CARD_H || rows.some(row => row.length + point.x > CARD_W)) bad('body layer exceeds the resting card')
     const when: { legs?: 0 | 1; kick?: ('left' | 'right' | 'none')[] } = {}
     if (v['when'] !== undefined) {
@@ -466,9 +479,12 @@ const parseBody = (o: Obj, origin: string): BodyDef => {
   if (!Number.isInteger(left) || !Number.isInteger(right)) bad('body armLift must contain integers')
   const e = o['eyes']
   if (!isObj(e) || !Array.isArray(e['points']) || e['points'].length < 1 || e['points'].length > 8) return bad('body eyes must define 1 to 8 points')
-  const eyes = { points: e['points'].map(v => coord(v, 'body eye')), height: num(e, 'height', 1, 3), blink: num(e, 'blink', 0, 2), look: num(e, 'look', 0, 2) }
+  const eyes = { points: e['points'].map(v => coord(v, 'body eye')), height: num(e, 'height', 1, 3), blink: num(e, 'blink', 0, 2), look: num(e, 'look', 0, 2),
+    ...(e['color'] !== undefined ? { color: parseColor(e['color'], 'eyes.color') } : {}) }
   if (![eyes.height, eyes.blink, eyes.look].every(Number.isInteger)) bad('body eye dimensions must be integers')
-  return { id: idOf(o), name: str(o, 'name') as string, layers, anchors, armLift: { left, right }, eyes, origin, source: o }
+  return { id: idOf(o), name: str(o, 'name') as string, layers, anchors, armLift: { left, right }, eyes,
+    ...(o['color'] !== undefined ? { color: parseColor(o['color'], 'color') } : {}),
+    ...(Object.keys(palette).length ? { palette } : {}), origin, source: o }
 }
 
 const parseCostume = (o: Obj, origin: string): CostumeDef => {
@@ -484,6 +500,7 @@ const parseCostume = (o: Obj, origin: string): CostumeDef => {
     color: parseColor(o['color'], 'color'),
     ...(str(body, 'id', true) ? { bodyId: str(body, 'id') as string } : {}),
     body: body['color'] !== undefined ? parseColor(body['color'], 'body.color') : CLAY,
+    ...(body['color'] !== undefined ? { ownColor: true } : {}),
     ...(body['eyes'] !== undefined ? { eyes: parseColor(body['eyes'], 'body.eyes') } : {}),
     pieces,
     origin,
@@ -625,7 +642,6 @@ export type DesignFile = { file: string; text?: string; json?: unknown }
 export const compilePack = (files: readonly DesignFile[], base: Pack = emptyPack()): Pack => {
   const p: Pack = {
     bodies: { ...base.bodies },
-    ...(base.defaultBody ? { defaultBody: base.defaultBody } : {}),
     pieces: { ...base.pieces },
     costumes: { ...base.costumes },
     actions: { ...base.actions },
@@ -666,7 +682,7 @@ export const compilePack = (files: readonly DesignFile[], base: Pack = emptyPack
         const r = parseRules(o, file)
         if (r.active) p.active = r.active
         if (r.master) p.master = r.master
-        if (r.defaultBody) p.defaultBody = r.defaultBody
+        if (r.defaultBody) p.problems.push({ file, msg: `"defaultBody" is no longer read: each costume names its own body with "body": { "id": "${r.defaultBody}" }`, fatal: false })
         if (r.kinds) Object.assign(p.kinds!, r.kinds)
         userRules.push(...r.rules)
         Object.assign(p.labels, r.labels)
@@ -697,15 +713,16 @@ export const compilePack = (files: readonly DesignFile[], base: Pack = emptyPack
 
 /** Cross-references: costumes name pieces that exist, one piece per slot, nothing under what another covers. */
 const link = (p: Pack): Pack => {
-  if (p.defaultBody && !Object.hasOwn(p.bodies, p.defaultBody)) {
-    p.problems.push({ file: 'rules', msg: `defaultBody "${p.defaultBody}" does not exist`, fatal: true })
-    delete p.defaultBody
-  }
   for (const d of Object.values(p.costumes)) {
     const missing = d.pieces.filter(id => !p.pieces[id])
     const used = new Map<Slot, string>()
     const problems: string[] = missing.map(id => `piece "${id}" does not exist`)
     if (d.bodyId && !Object.hasOwn(p.bodies, d.bodyId)) problems.push(`body "${d.bodyId}" does not exist`)
+    const on = d.bodyId ?? 'crab'
+    for (const id of d.pieces) {
+      const drawnOn = p.pieces[id]?.body
+      if (drawnOn && drawnOn !== on) problems.push(`piece "${id}" is drawn for body "${drawnOn}", not "${on}"`)
+    }
     for (const id of d.pieces) {
       const pz = p.pieces[id]
       if (!pz) continue
@@ -775,7 +792,8 @@ const drawLayer = (put: Put, ox: number, oy: number, c: Layer, off: { x: number;
 
 // ---- drawing one agent
 
-export const effectiveBodyId = (pack: Pack, costume: string): string => pack.costumes[costume]?.bodyId ?? pack.defaultBody ?? 'crab'
+/** A costume's body: the one it names, else the crab. There is no crew-wide default. */
+export const effectiveBodyId = (pack: Pack, costume: string): string => pack.costumes[costume]?.bodyId ?? 'crab'
 
 export type Plan = { rig?: BodyDef; pose: Pose; mirror: boolean; hidden: Set<string>; effect: boolean; pieces: Piece[]; body: number }
 
@@ -801,9 +819,11 @@ export const planOf = (pack: Pack, costume: string, action: string, t: number): 
     }
   }
   if (mirror) pose = mirrorPose(pose)
-  const base = d?.body ?? CLAY
+  const rig = pack.bodies[effectiveBodyId(pack, d?.id ?? costume)]
+  // a costume that names no body color takes the body's own (the crab's is CLAY)
+  const base = d?.ownColor ? d.body : rig?.color ?? d?.body ?? CLAY
   const body = a && a.dim > 0 ? mix(base, 0x808080, a.dim) : base
-  return { rig: pack.bodies[effectiveBodyId(pack, d?.id ?? costume)], pose, mirror, hidden, effect, pieces, body }
+  return { rig, pose, mirror, hidden, effect, pieces, body }
 }
 
 /** Draws one agent card at (ox, oy): pieces by slot around the body, then the action's effect. */
@@ -823,12 +843,16 @@ export const renderAgent = (put: Put, ox: number, oy: number, pack: Pack, costum
       if (pl.rig) drawBody(body, ox, oy, pl.body, pl.pose, pl.rig, d?.eyes)
       bodyDrawn = true
     }
-    const off = pl.rig ? bodyAnchorOffset(pl.rig, p.anchor, pl.pose) : { x: 0, y: 0 }
+    // a piece drawn for this body moves with its anchor; one drawn on the crab moves onto this body first
+    const off = !pl.rig ? { x: 0, y: 0 } : p.body ? bodyAnchorMotion(pl.rig, p.anchor, pl.pose) : bodyAnchorOffset(pl.rig, p.anchor, pl.pose)
     for (const c of p.layers) drawLayer(body, ox, oy, c, off, actionId, t, TAG.piece(p.id), p.free)
   }
   if (!bodyDrawn && pl.rig) drawBody(body, ox, oy, pl.body, pl.pose, pl.rig, d?.eyes)
   if (pl.effect && a) {
-    const fx: Put = pl.mirror ? (x, y, col, tag) => put(ox + CARD_W - 1 - (x - ox), y, col, tag) : put
+    // a held prop goes to the claw (or paw) this body has where the crab's is; other effects stay on the card
+    const side = a.hand ? (pl.mirror ? (a.hand === 'left' ? 'right' : 'left') : a.hand) : undefined
+    const sh = pl.rig && side ? anchorShift(pl.rig, `claw.${side}`) : { x: 0, y: 0 }
+    const fx: Put = pl.mirror ? (x, y, col, tag) => put(ox + CARD_W - 1 - (x - ox) + sh.x, y + sh.y, col, tag) : (x, y, col, tag) => put(x + sh.x, y + sh.y, col, tag)
     for (const c of a.effect) drawLayer(fx, ox, oy, c, { x: 0, y: 0 }, actionId, t, TAG.effect(a.id))
   }
 }

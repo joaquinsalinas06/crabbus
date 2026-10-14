@@ -3,17 +3,23 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { BUILTIN, BODIES } from '../src/builtin.ts'
 import { planBodyEdit } from '../src/body-edit.ts'
-import { bodyCompatibility, checkPack, defaultBodyCompatibility, loadPack } from '../src/fit.ts'
-import { bundle, compilePack, effectiveBodyId, renderAgent } from '../src/pack.ts'
-import { bodyAnchorOffset, POSE0 } from '../src/rig.ts'
+import { bodyCompatibility, checkPack, loadPack } from '../src/fit.ts'
+import { bundle, compilePack, effectiveBodyId, planOf, renderAgent } from '../src/pack.ts'
+import { anchorShift, bodyAnchorOffset, POSE0 } from '../src/rig.ts'
 import { planRuleEdit } from '../src/rules-edit.ts'
 
 const robot = () => JSON.parse(JSON.stringify(BODIES.find((b: any) => b.id === 'robot')))
-const rules = (defaultBody: string) => ({ file: 'rules.json', json: { type: 'rules', defaultBody } })
+// a copy of a built-in costume that names its body: each costume is one creature, there is no crew-wide default
+const on = (body: string, id = 'other') => ({ file: `${id}-${body}.json`, json: { ...(BUILTIN.costumes[id]!.source as object), body: { id: body } } })
+const capybaraSkin = () => ({ file: 'capybara-scarf.json', json: { type: 'bundle', items: [
+  { type: 'piece', id: 'capybara-scarf', name: 'wool scarf', body: 'capybara', slot: 'neck', anchor: 'body',
+    layers: [{ pos: [7, 5], drawings: { a: ['rr...', 'cc...', 'rrrr.', '..rr.', '..c..', '..r..'] }, palette: { r: '#c0392b', c: '#efe2c2' } }] },
+  { type: 'costume', id: 'capybara-scarf', name: 'capybara with scarf', color: '#cf7f45', body: { id: 'capybara' }, pieces: ['capybara-scarf'] },
+] } })
 
 test('bodies: both built-in species fit every costume and action', () => {
   assert.equal(checkPack(BUILTIN).problems.length, 0)
-  const p = compilePack([rules('robot')], BUILTIN)
+  const p = compilePack([on('robot')], BUILTIN)
   assert.equal(checkPack(p).problems.length, 0)
   const pixels = (pack: typeof p) => {
     const out: unknown[] = []
@@ -23,17 +29,62 @@ test('bodies: both built-in species fit every costume and action', () => {
   assert.notDeepEqual(pixels(p), pixels(BUILTIN))
 })
 
-test('bodies: explicit choice wins over global fallback; old designs keep inheriting', () => {
+test('bodies: each costume names its own body; one without an id is a crab; defaultBody is no longer read', () => {
   const source = BUILTIN.costumes.other!.source as Record<string, unknown>
   const old = { ...source, id: 'old', body: { color: '#abcdef' } }
-  const explicit = { ...source, id: 'explicit', body: { id: 'crab' } }
-  const p = compilePack([rules('robot'), { file: 'crew.json', json: { type: 'bundle', items: [old, explicit] } }], BUILTIN)
-  assert.equal(effectiveBodyId(p, 'old'), 'robot')
-  assert.equal(effectiveBodyId(p, 'explicit'), 'crab')
+  const robo = { ...source, id: 'robo', body: { id: 'robot' } }
+  const p = compilePack([{ file: 'rules.json', json: { type: 'rules', defaultBody: 'robot' } }, { file: 'crew.json', json: { type: 'bundle', items: [old, robo] } }], BUILTIN)
+  assert.equal(effectiveBodyId(p, 'old'), 'crab')
+  assert.equal(effectiveBodyId(p, 'robo'), 'robot')
   assert.equal(effectiveBodyId(BUILTIN, 'other'), 'crab')
-  assert.equal(p.costumes.old!.bodyId, undefined)
-  const rotated = planRuleEdit([{ file: 'rules.json', text: JSON.stringify({ type: 'rules', defaultBody: 'robot' }) }], { op: 'toggleActive', costume: 'other' }, p)
-  assert.equal(rotated.ok && rotated.pack.defaultBody, 'robot')
+  const warning = p.problems.find(x => /defaultBody/.test(x.msg))
+  assert.ok(warning && !warning.fatal)
+  assert.equal('defaultBody' in p, false)
+})
+
+test('bodies: crabs, robots and capybaras live side by side in one crew', () => {
+  const p = loadPack([capybaraSkin(), on('robot', 'heavy')], BUILTIN)
+  assert.deepEqual(p.problems.filter(x => x.fatal), [])
+  assert.equal(effectiveBodyId(p, 'capybara-scarf'), 'capybara')
+  assert.equal(effectiveBodyId(p, 'heavy'), 'robot')
+  assert.equal(effectiveBodyId(p, 'fable'), 'crab')
+})
+
+test('bodies: the capybara fits every action bare and with its own scarf; the scarf is refused on a crab', () => {
+  const bare = compilePack([{ file: 'bare.json', json: { type: 'costume', id: 'bare', name: 'bare', color: '#cf7f45', body: { id: 'capybara' }, pieces: [] } }], BUILTIN)
+  assert.deepEqual(bodyCompatibility(bare, 'bare', 'capybara'), [])
+  const p = loadPack([capybaraSkin()], BUILTIN)
+  assert.ok(p.costumes['capybara-scarf'])
+  assert.deepEqual(bodyCompatibility(p, 'capybara-scarf', 'capybara'), [])
+  const wrong = compilePack([capybaraSkin(), { file: 'crab-scarf.json', json: { type: 'costume', id: 'crab-scarf', name: 'x', color: '#cf7f45', pieces: ['capybara-scarf'] } }], BUILTIN)
+  assert.ok(wrong.problems.some(x => /drawn for body "capybara", not "crab"/.test(x.msg)))
+})
+
+test('bodies: a body brings its own color and fixed palette; a costume color still wins', () => {
+  const bare = compilePack([{ file: 'c.json', json: { type: 'costume', id: 'c', name: 'c', color: '#cf7f45', body: { id: 'capybara' }, pieces: [] } }], BUILTIN)
+  assert.equal(planOf(bare, 'c', 'walk', 0).body, BUILTIN.bodies.capybara!.color)
+  const tinted = compilePack([{ file: 'c.json', json: { type: 'costume', id: 'c', name: 'c', color: '#cf7f45', body: { id: 'capybara', color: '#808080' } , pieces: [] } }], BUILTIN)
+  assert.equal(planOf(tinted, 'c', 'walk', 0).body, 0x808080)
+  const colors = new Set<number>()
+  renderAgent((_x, _y, col) => colors.add(col), 0, 0, bare, 'c', 'walk', 0)
+  for (const fixed of Object.values(BUILTIN.bodies.capybara!.palette ?? {}).slice(0, 2)) assert.ok(colors.has(fixed))
+  for (const palette of [{ B: '#000000' }, { xy: '#000000' }, { q: 'red' }]) {
+    const b = robot(); b.palette = palette
+    assert.ok(compilePack([{ file: 'bad.json', json: b }], BUILTIN).problems.some(x => x.fatal), JSON.stringify(palette))
+  }
+})
+
+test('bodies: a held prop moves to the paw the body has where the crab has its claw', () => {
+  const cap = BUILTIN.bodies.capybara!
+  assert.deepEqual(anchorShift(BUILTIN.bodies.crab!, 'claw.left'), { x: 0, y: 0 })
+  const shift = anchorShift(cap, 'claw.left')
+  const xs = (pack: typeof BUILTIN, costume: string) => {
+    const out: number[] = []
+    renderAgent((x, _y, _c, tag) => { if (tag?.startsWith('effect:reading')) out.push(x) }, 0, 0, pack, costume, 'reading', 0)
+    return Math.min(...out)
+  }
+  const bare = compilePack([{ file: 'c.json', json: { type: 'costume', id: 'c', name: 'c', color: '#cf7f45', body: { id: 'capybara' }, pieces: [] } }], BUILTIN)
+  assert.equal(xs(bare, 'c') - xs(BUILTIN, 'other'), shift.x)
 })
 
 test('bodies: reject malformed geometry, states, anchors and missing references', () => {
@@ -44,13 +95,14 @@ test('bodies: reject malformed geometry, states, anchors and missing references'
     (b: any) => b.anchors.card.motion = 'body',
     (b: any) => delete b.anchors.head,
     (b: any) => b.eyes.height = 1.5,
+    (b: any) => b.layers[0].rows = ['z'],
   ]) {
     const b = robot(); mutate(b)
     const p = compilePack([{ file: 'bad.json', json: b }], BUILTIN)
     assert.ok(p.problems.some(p => p.fatal), JSON.stringify(b))
     assert.equal(p.bodies.robot, BUILTIN.bodies.robot)
   }
-  for (const id of ['missing', 'constructor', 'toString']) assert.ok(compilePack([rules(id)], BUILTIN).problems.some(p => p.fatal))
+  for (const id of ['missing', 'constructor', 'toString']) assert.ok(compilePack([on(id)], BUILTIN).problems.some(p => p.fatal))
 })
 
 test('bodies: portable anchors move pieces from crab rest and follow their own arms', () => {
@@ -63,13 +115,13 @@ test('bodies: portable anchors move pieces from crab rest and follow their own a
 
 test('bodies: fit rejects body and eye pixels outside the card with full context', () => {
   const b = robot(); b.eyes.points = [{ x: 5, y: 13 }]
-  const p = loadPack([{ file: 'robot.json', json: b }, rules('robot')], BUILTIN)
+  const p = loadPack([{ file: 'robot.json', json: b }, on('robot')], BUILTIN)
   assert.ok(p.problems.some(p => /body spills/.test(p.msg) && /body "robot".*costume/.test(p.msg) && /tick/.test(p.msg)))
 })
 
 test('bodies: builtin edits create user overrides without mutating builtin or inputs', () => {
   const source = JSON.stringify(BUILTIN.costumes.other!.source)
-  const input = [rules('crab')]
+  const input = [{ file: 'notes.json', json: { type: 'rules', labels: { walk: 'walk' } } }]
   const before = JSON.stringify(input)
   const edit = planBodyEdit(input, { op: 'setBody', costume: 'other', body: 'robot' }, BUILTIN)
   assert.equal(edit.ok, true)
@@ -107,12 +159,11 @@ test('bodies: incompatible choices are cached and blocked before saving', () => 
   assert.match(issues[0]!.msg, /tick/)
   assert.equal(bodyCompatibility(p, 'master', 'robot'), issues)
   assert.equal(planBodyEdit([{ file: 'bad-fit.json', json: b }], { op: 'setBody', costume: 'master', body: 'robot' }, p).ok, false)
-  assert.ok(defaultBodyCompatibility(p, 'robot').length > 0)
   assert.equal(bodyCompatibility(BUILTIN, 'master', 'robot').length, 0)
 })
 
 test('bodies: export carries effective species and supports standalone body export', () => {
-  const p = compilePack([rules('robot')], BUILTIN)
+  const p = compilePack([on('robot')], BUILTIN)
   const exported = bundle(p, ['other'])
   const imported = compilePack([{ file: 'shared.json', json: exported.json }], BUILTIN)
   assert.equal(effectiveBodyId(imported, 'other'), 'robot')
@@ -153,27 +204,19 @@ test('bodies: selecting inheritance twice is a no-op and restoring a builtin rem
   if (again.ok) assert.equal(again.pack.costumes.other!.bodyId, 'robot')
 })
 
-test('bodies: a later rules item cannot silently override the requested default', () => {
-  const files = [rules('crab'), { file: 'later.json', json: { type: 'bundle', items: [{ type: 'rules', defaultBody: 'robot' }] } }]
-  const p = loadPack(files, BUILTIN)
-  const edit = planBodyEdit(files, { op: 'setDefaultBody', body: 'crab' }, p)
-  assert.equal(edit.ok, false)
-  if (!edit.ok) assert.match(edit.error, /another rules item overrides/)
-})
-
-
 test('bodies: legacy bundles remain editable without rewriting their sibling items', () => {
   const file = SPANISH_USER_DESIGNS[0]!
   const p = loadPack([file], BUILTIN)
   const costume = Object.values(p.costumes).find(c => c.origin === file.file)!
   assert.ok(costume)
-  const edit = planBodyEdit([file], { op: 'setBody', costume: costume.id, body: 'crab' }, p)
+  assert.equal(planBodyEdit([file], { op: 'setBody', costume: costume.id, body: 'crab' }, p).ok, true)
+  const edit = planBodyEdit([file], { op: 'setBody', costume: costume.id, body: 'robot' }, p)
   assert.ok(edit.ok)
-  if (edit.ok) assert.equal(edit.pack.costumes[costume.id]!.bodyId, 'crab')
+  if (edit.ok) assert.equal(edit.pack.costumes[costume.id]!.bodyId, 'robot')
 })
 
 
-test('bodies: changing the fallback does not revive or re-reject an unrelated broken outfit', () => {
+test('bodies: changing one costume does not revive or re-reject an unrelated broken outfit', () => {
   const broken = { type: 'bundle', items: [
     { type: 'piece', id: 'floating', name: 'floating', slot: 'head', anchor: 'head', layers: [{ drawings: { a: ['X'] }, pos: [0, 0], palette: { X: '#ffffff' } }] },
     { type: 'costume', id: 'broken-outfit', name: 'broken outfit', color: '#abcdef', pieces: ['floating'] },
@@ -182,9 +225,9 @@ test('bodies: changing the fallback does not revive or re-reject an unrelated br
   const p = loadPack(files, BUILTIN)
   assert.ok(p.problems.some(p => /floats/.test(p.msg)))
   assert.equal(p.costumes['broken-outfit'], undefined)
-  const edit = planBodyEdit(files, { op: 'setDefaultBody', body: 'robot' }, p)
+  const edit = planBodyEdit(files, { op: 'setBody', costume: 'other', body: 'robot' }, p)
   assert.ok(edit.ok)
-  if (edit.ok) assert.equal(edit.pack.defaultBody, 'robot')
+  if (edit.ok) assert.equal(edit.pack.costumes['broken-outfit'], undefined)
 })
 
 test('bodies: the shipped-pair shortcut is invalidated by user actions', () => {

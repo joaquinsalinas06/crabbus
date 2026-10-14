@@ -373,7 +373,7 @@ for (const surface of ['terminal', 'desktop'] as const) describe(`crabbus (${sur
     expect(fallback).toMatch(/RULES IN ORDER/)
   })
 
-  test('body selectors persist builtin overrides, inherit defaults and preserve files on write failure', { timeoutMs: 15000 }, async ($, on) => {
+  test('body selectors persist builtin overrides per costume and preserve files on write failure', { timeoutMs: 15000 }, async ($, on) => {
     stubs(on, [], [])
     mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg', HOME: '/home/u' })
     const files: Record<string, string> = {}
@@ -390,23 +390,23 @@ for (const surface of ['terminal', 'desktop'] as const) describe(`crabbus (${sur
     await $.session.start(start)
     const ui = await mountPane($)
     await ui.press({ key: 'view-wardrobe' })
-    await ui.press({ key: 'wd-body-default-robot' })
-    expect(JSON.parse(files['rules.json'] ?? '{}').defaultBody).toBe('robot')
-    expect(await ui.find({ type: 'Text', text: /Body: robot \(rules.defaultBody\)/ })).toBeDefined()
-    await ui.press({ key: 'wd-body-master-crab' })
-    expect(JSON.parse(files['body-master.crab.json'] ?? '{}').body.id).toBe('crab')
-    expect(await ui.find({ type: 'Text', text: /Body: crab \(costume\)/ })).toBeDefined()
+    // no crew-wide default: only the picked costume's body can be chosen
+    expect(await ui.find({ type: 'Button', key: 'wd-body-default-robot' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /Body: Crab/ })).toBeDefined()
+    await ui.press({ key: 'wd-body-master-robot' })
+    expect(JSON.parse(files['body-master.crab.json'] ?? '{}').body.id).toBe('robot')
+    expect(await ui.find({ type: 'Text', text: /Body: Robot/ })).toBeDefined()
     const prior = files['body-master.crab.json']
     failWrite = true
-    await ui.press({ key: 'wd-body-master-robot' })
-    expect(files['body-master.crab.json']).toBe(prior)
-    expect(await ui.find({ type: 'Text', text: /Body: crab \(costume\)/ })).toBeDefined()
-    failWrite = false
-    await ui.press({ key: 'wd-body-inherit-master' })
-    expect(JSON.parse(files['body-master.crab.json'] ?? '{}').type).toBe('bundle')
-    expect(await ui.find({ type: 'Text', text: /Body: robot \(rules.defaultBody\)/ })).toBeDefined()
+    // the crab's crown does not fit the capybara: that choice shows its reason and cannot be pressed
+    expect(await ui.find({ type: 'Button', key: 'wd-body-master-capybara' })).toBeUndefined()
     await ui.press({ key: 'wd-body-master-crab' })
-    expect(JSON.parse(files['body-master.crab.json'] ?? '{}').body.id).toBe('crab')
+    expect(files['body-master.crab.json']).toBe(prior)
+    expect(await ui.find({ type: 'Text', text: /Body: Robot/ })).toBeDefined()
+    failWrite = false
+    await ui.press({ key: 'wd-body-master-crab' })
+    expect(JSON.parse(files['body-master.crab.json'] ?? '{}').type).toBe('bundle')
+    expect(await ui.find({ type: 'Text', text: /Body: Crab/ })).toBeDefined()
     await ui.unmount()
   })
 

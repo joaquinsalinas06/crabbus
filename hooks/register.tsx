@@ -4,7 +4,7 @@
 // tool's call, never changes a message, and any failure of its own falls through to `next(e)`.
 // It also adds one thing the model reads: BRIEF, appended to each spawned subagent's prompt (see README).
 import { planBodyEdit, type BodyOp } from '../src/body-edit.ts'
-import { bodyCompatibility, defaultBodyCompatibility } from '../src/fit.ts'
+import { bodyCompatibility } from '../src/fit.ts'
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, FsEntry, Register, RenderChildren, RenderElement, RenderInput, RenderNode } from 'claude-code'
 
@@ -1001,14 +1001,11 @@ export const register: Register = (on, options) => {
       const bodyChoice = (key: string, label: string, selected: boolean, problems: readonly { msg: string }[], op: BodyOp) => selected ? <Text key={key} color={hex(C.dim)}>{`● ${label}`}</Text> : problems.length
         ? <Text key={key} color={hex(C.faint)} wrap="wrap">{`${label} — unavailable: ${problems[0]?.msg}`}</Text>
         : <Button key={key} plain={desktop ? undefined : true} onPress={() => editBody($, op)}>{`${selected ? '● ' : '○ '}${label}`}</Button>
-      const bodyChoices = (costume?: WardrobeCostumeView) => <Box flexDirection="column" marginTop={1}>
-        <Text bold color={hex(C.text)}>{costume ? `Body: ${costume.bodyId} (${costume.bodySource})` : `Default body: ${pack.defaultBody ?? 'crab'} (fallback only)`}</Text>
-        {costume
-          ? bodyChoice(`wd-body-inherit-${costume.id}`, 'Inherit default body', !costume.explicitBody, bodyCompatibility(pack, costume.id, pack.defaultBody ?? 'crab'), { op: 'setBody', costume: costume.id })
-          : bodyChoice('wd-body-default-inherit', 'Use built-in fallback (crab)', !pack.defaultBody, defaultBodyCompatibility(pack, 'crab'), { op: 'setDefaultBody' })}
-        {Object.values(pack.bodies).map(b => costume
-          ? bodyChoice(`wd-body-${costume.id}-${b.id}`, b.name, costume.explicitBody === b.id, bodyCompatibility(pack, costume.id, b.id), { op: 'setBody', costume: costume.id, body: b.id })
-          : bodyChoice(`wd-body-default-${b.id}`, b.name, pack.defaultBody === b.id, defaultBodyCompatibility(pack, b.id), { op: 'setDefaultBody', body: b.id }))}
+      // each costume is one creature: the body it names, else the crab. No crew-wide default.
+      const bodyChoices = (costume: WardrobeCostumeView) => <Box flexDirection="column" marginTop={1}>
+        <Text bold color={hex(C.text)}>{`Body: ${pack.bodies[costume.bodyId]?.name ?? costume.bodyId}`}</Text>
+        {Object.values(pack.bodies).map(b => bodyChoice(`wd-body-${costume.id}-${b.id}`, b.name, costume.bodyId === b.id,
+          bodyCompatibility(pack, costume.id, b.id), { op: 'setBody', costume: costume.id, body: b.id }))}
       </Box>
       const mine = m.rules.filter(r => r.editable)
       const builtin = m.rules.filter(r => !r.editable)
@@ -1218,7 +1215,6 @@ export const register: Register = (on, options) => {
             </Box>
           )}
 
-          {bodyChoices()}
 
           {chosen && (() => {
             // the picked costume's card: what it is, its two switches, every rule that dresses an agent in it, and a new one

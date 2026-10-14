@@ -183,14 +183,18 @@ Clawd frames from the Claude desktop app are Anthropic's artwork; CrabBus does n
 ## Bodies as Data
 
 Bodies compile alongside pieces, costumes and actions. `src/builtin.ts` supplies `crab`
-and `robot` in the same editable format users export. `src/rig.ts` interprets their layers,
+`robot` and `capybara` in the same editable format users export. `src/rig.ts` interprets their layers,
 limb states, eye coordinates and anchor motion using the unchanged Pose and 18 by 14 card.
 The crab extraction preserves every existing golden pixel fingerprint.
 
 A costume's `body` object keeps its color and eye color and optionally names an `id`.
-Resolution is costume `body.id`, then rules `defaultBody`, then `crab`. Both transports,
-miniatures, the master, previews and fit use this same resolution. Accessories remain
-in resting-crab coordinates, translated by anchor rest differences before pose motion.
+Resolution is costume `body.id`, else `crab`: there is no crew-wide default, so one crew
+mixes species by skin. Both transports, miniatures, the master, previews and fit use this
+resolution. A body may bring a base `color` (used when the costume names none) and a fixed
+`palette` for outline, nose, ears and legs. A piece that names a `body` is drawn in that
+body's coordinates and moves with its anchor only; a piece without one stays in resting-crab
+coordinates, translated by anchor rest differences before pose motion. A held action effect
+moves by the body's claw anchor minus the crab's, so props land on the capybara's paws.
 
 Wardrobe body changes run fit before enabling a choice and again before writing. Results
 are cached for a pack revision and invalidated by reload. A built-in costume change writes
@@ -200,8 +204,7 @@ Body changes bypass the rules-only fast path because they change pixels. Externa
 between the final read and write are not protected by a filesystem compare-and-swap API.
 
 Use `/costume export robot` for a complete body schema. Exporting an outfit includes its
-effective body and pins that species in the exported costume, preserving its appearance
-when imported into a crew with another global fallback.
+effective body and pins that species in the exported costume.
 
 Returning a same-ID built-in override to inheritance removes the override definition if
 it otherwise matches the built-in. A standalone override file becomes an empty bundle,

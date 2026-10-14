@@ -1,34 +1,28 @@
 // Body edits change pixels: validate the complete candidate before writing any user file.
 import { BUILTIN } from './builtin.ts'
-import { bodyCompatibility, loadPack, defaultBodyCompatibility } from './fit.ts'
+import { bodyCompatibility, loadPack } from './fit.ts'
 import { normalizeDesignJson } from './legacy.ts'
 import { BUILTIN_ORIGIN, type DesignFile, type Pack } from './pack.ts'
 import { rulesFileOf, type Plan } from './rules-edit.ts'
 
-export type BodyOp = { op: 'setBody'; costume: string; body?: string } | { op: 'setDefaultBody'; body?: string }
+/** A costume's body; `crab` (or none) removes the explicit id. There is no crew-wide default. */
+export type BodyOp = { op: 'setBody'; costume: string; body?: string }
 type Obj = Record<string, unknown>
 const object = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
 const readJson = (f: DesignFile): unknown => f.json === undefined ? JSON.parse(f.text ?? '') : JSON.parse(JSON.stringify(f.json))
 
 export function planBodyEdit(files: readonly DesignFile[], op: BodyOp, current: Pack): Plan {
   try {
-    if ((op.op === 'setBody' && current.costumes[op.costume]?.bodyId === op.body) ||
-      (op.op === 'setDefaultBody' && current.defaultBody === op.body)) return {
+    if (op.body === 'crab') op = { ...op, body: undefined }
+    if ((current.costumes[op.costume]?.bodyId ?? 'crab') === (op.body ?? 'crab')) return {
       ok: true, unchanged: true, file: '', text: '', files: [...files], pack: current, summary: 'Body unchanged.',
     }
-    const body = op.body ?? (op.op === 'setBody' ? current.defaultBody ?? 'crab' : 'crab')
-    const issues = op.op === 'setBody' ? bodyCompatibility(current, op.costume, body) : defaultBodyCompatibility(current, body)
+    const body = op.body ?? 'crab'
+    const issues = bodyCompatibility(current, op.costume, body)
     if (issues.length) throw new Error(issues.map(p => p.msg).join('; '))
     let file: string
     let raw: unknown
-    if (op.op === 'setDefaultBody') {
-      file = rulesFileOf(files)
-      const before = files.find(f => f.file === file)
-      raw = before ? readJson(before) : { type: 'rules' }
-      if (!object(raw) || raw['type'] !== 'rules') throw new Error('the destination is not a rules file')
-      if (op.body) raw['defaultBody'] = op.body
-      else delete raw['defaultBody']
-    } else {
+    {
       const costume = current.costumes[op.costume]
       if (!costume) throw new Error(`unknown costume "${op.costume}"`)
       const user = costume.origin !== BUILTIN_ORIGIN
@@ -68,15 +62,13 @@ export function planBodyEdit(files: readonly DesignFile[], op: BodyOp, current: 
     const rejected = new Set(current.problems.filter(p => p.fatal && p.id).map(p => `${p.file}:${p.id}`))
     const fatal = pack.problems.filter(p => {
       if (!p.fatal || prior.has(key(p))) return false
-      if (p.costume && !current.costumes[p.costume] && (op.op !== 'setBody' || op.costume !== p.costume)) return false
+      if (p.costume && !current.costumes[p.costume] && op.costume !== p.costume) return false
       if (p.id && rejected.has(`${p.file}:${p.id}`) && !current.costumes[p.id] && !current.pieces[p.id] && !current.actions[p.id] && !current.bodies[p.id]) return false
       return true
     })
     if (fatal.length) throw new Error(fatal.map(p => `${p.file}: ${p.msg}`).join('; '))
-    if (op.op === 'setBody' && !pack.costumes[op.costume]) throw new Error('the edited costume did not pass validation')
-    if (op.op === 'setDefaultBody' && pack.defaultBody !== op.body) throw new Error('another rules item overrides defaultBody; edit that source first')
-    return { ok: true, file, text, files: next, pack, summary: op.op === 'setBody'
-      ? `${op.costume} body: ${op.body ?? 'inherit'}.` : `Default body: ${op.body ?? 'crab (built-in fallback)'}.` }
+    if (!pack.costumes[op.costume]) throw new Error('the edited costume did not pass validation')
+    return { ok: true, file, text, files: next, pack, summary: `${op.costume} body: ${op.body ?? 'crab'}.` }
   } catch (e) {
     return { ok: false, error: `Not changed: ${(e as Error).message}` }
   }

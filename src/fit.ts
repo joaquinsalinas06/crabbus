@@ -185,7 +185,7 @@ export const checkPack = (pack: Pack, only?: ReadonlySet<string>): FitReport => 
   for (const id of Object.keys(pack.pieces)) {
     if (worn.has(id)) continue
     const solo = `(solo) ${id}`
-    cases.push({ costume: solo, pack: { ...pack, costumes: { ...pack.costumes, [solo]: { id: solo, name: id, color: 0x888780, body: 0xd97757, bodyId: 'crab', pieces: [id], origin: '', source: null } } } })
+    cases.push({ costume: solo, pack: { ...pack, costumes: { ...pack.costumes, [solo]: { id: solo, name: id, color: 0x888780, body: 0xd97757, bodyId: pack.pieces[id]?.body ?? 'crab', pieces: [id], origin: '', source: null } } } })
   }
   const actions = Object.keys(pack.actions)
   for (const { costume, pack: p } of cases) {
@@ -258,7 +258,7 @@ export const loadPack = (files: readonly DesignFile[], base: Pack): Pack => {
   for (const [id, x] of Object.entries(p.pieces)) if (x !== base.pieces[id]) touched.add(id)
   for (const [id, x] of Object.entries(p.costumes)) if (x !== base.costumes[id]) touched.add(id)
   const newActions = Object.values(p.actions).some(a => a !== base.actions[a.id])
-  const newBodies = p.defaultBody !== base.defaultBody || Object.values(p.bodies).some(b => b !== base.bodies[b.id])
+  const newBodies = Object.values(p.bodies).some(b => b !== base.bodies[b.id])
   const r = checkPack(p, newActions || newBodies ? undefined : touched)
   const dropped = without(p, r.badPieces, r.problems)
   const out = { ...dropped, costumes: Object.fromEntries(Object.entries(dropped.costumes).filter(([id]) => !r.badCostumes.has(id))) }
@@ -289,9 +289,4 @@ export const bodyCompatibility = (pack: Pack, costume: string, body: string): Pr
     pieces: Object.fromEntries(pieces.filter((p): p is Piece => p !== undefined).map(p => [p.id, p])) }).problems
   cache.set(b, { pieces, actions, problems })
   return problems
-}
-
-export const defaultBodyCompatibility = (pack: Pack, body: string): Problem[] => {
-  if (!Object.hasOwn(pack.bodies, body)) return [{ file: 'rules', msg: `unknown body "${body}"`, fatal: true }]
-  return Object.values(pack.costumes).filter(d => !d.bodyId).flatMap(d => bodyCompatibility(pack, d.id, body))
 }

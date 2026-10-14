@@ -445,6 +445,35 @@ export const BODIES: readonly unknown[] = [
     armLift: {"left": -2, "right": -2},
     eyes: {"points": [{"x": 5, "y": 8}, {"x": 12, "y": 8}], "height": 2, "blink": 1, "look": 1},
   },
+  {
+    // a side-view quadruped: its own outline, muzzle and ear colors, four legs that alternate while walking
+    type: 'body', id: 'capybara', name: 'Capybara', color: "#cf7f45",
+    palette: {"o": "#2a1810", "b": "#4a2a18", "c": "#7d4a2c", "n": "#140b06", "l": "#6a3e24", "f": "#3e2415"},
+    layers: [
+      {"x": 4, "y": 11, "motion": "ground", "rows": ["ff", "ff", "ff"], "when": {"legs": 0}},
+      {"x": 4, "y": 11, "motion": "ground", "rows": ["ff", "ff"], "when": {"legs": 1}},
+      {"x": 9, "y": 11, "motion": "ground", "rows": ["ff", "ff"], "when": {"legs": 0}},
+      {"x": 9, "y": 11, "motion": "ground", "rows": ["ff", "ff", "ff"], "when": {"legs": 1}},
+      {"x": 2, "y": 11, "motion": "ground", "rows": ["ll", "ll"], "when": {"legs": 0, "kick": ["none", "right"]}},
+      {"x": 2, "y": 11, "motion": "ground", "rows": ["ll", "ll", "ll"], "when": {"legs": 1, "kick": ["none", "right"]}},
+      {"x": 7, "y": 11, "motion": "ground", "rows": ["ll", "ll", "ll"], "when": {"legs": 0, "kick": ["none", "left"]}},
+      {"x": 7, "y": 11, "motion": "ground", "rows": ["ll", "ll"], "when": {"legs": 1, "kick": ["none", "left"]}},
+      {"x": 0, "y": 11, "motion": "ground", "rows": [".l.", "ll.", "l.."], "when": {"kick": ["left"]}},
+      {"x": 7, "y": 11, "motion": "ground", "rows": ["l..", ".ll", "..l"], "when": {"kick": ["right"]}},
+      {"x": 0, "y": 1, "motion": "body", "rows": ["..........oo......", "..........obooo...", ".........oHHHHHco.", "........oBBBBBBccn", "..oooooSBBBBBBBcco", ".oHHHHHSBBBBBBBco.", ".oBBBBBSBSSSSSSoo.", ".oBBBBBBBBBBo.....", ".oSSSSSSSSSSo.....", "..oooooooooo......"]},
+    ],
+    anchors: {
+      "card": {"x": 0, "y": 0, "motion": "card"},
+      "body": {"x": 6, "y": 7, "motion": "body"},
+      "head": {"x": 13, "y": 2, "motion": "body"},
+      "face": {"x": 15, "y": 5, "motion": "body"},
+      "claw.left": {"x": 9, "y": 9, "motion": "claw.left"},
+      "claw.right": {"x": 12, "y": 8, "motion": "claw.right"},
+      "ground": {"x": 6, "y": 13, "motion": "ground"},
+    },
+    armLift: {"left": 0, "right": 0},
+    eyes: {"points": [{"x": 13, "y": 4}], "height": 1, "blink": 0, "look": 0, "color": "#0e0805"},
+  },
 ]
 
 export const BUILTIN_ITEMS: readonly unknown[] = [...BODIES, ...ACTIONS, ...PIECES, ...COSTUMES, RULES]

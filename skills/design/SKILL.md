@@ -5,26 +5,45 @@ description: Design or customize the appearance of CrabBus crabs (the animated s
 
 # Designing CrabBus Crabs
 
-## Choose the Creature First
+## Skin or New Creature?
 
-Ask which creature the crew should be before drawing clothing. Use `crab` by default;
-`robot` is a second built-in body. Export either with `/costume export crab` or
-`/costume export robot`, edit the resulting body JSON, preview, fit-check, then install
-it in the user's designs folder. The crab remains the reference grid for all accessories.
+**Default: a skin.** A request for clothes, a hat, a theme or "a capybara costume" is a skin
+(costume) on a body that already exists: the crab unless they say otherwise. Draw pieces on
+that body and stop there.
 
-A costume keeps its existing `body` color object and may add `body.id` (for example,
-`{ "id": "robot", "color": "#d97757", "eyes": "#1f1e1d" }`). Selection is
-`costume.body.id`, then `rules.defaultBody`, then `crab`. Removing the explicit ID restores
-inheritance. Old designs keep inheriting; do not insert an explicit crab ID during migration.
-Changing a built-in costume in the wardrobe writes a user override with the same costume ID.
-Never edit the installed built-in source to customize a user's crew.
+**Only make a new body when they say so explicitly**: "a new creature", "a body of X",
+"not a costume", "make it a real dog". Then:
+
+1. Look at real references first: photos of the animal, and pixel art of it at a similar
+   size (search the web). Note what makes it readable: silhouette, proportions, the 2-3
+   features that identify it (a capybara: big blocky head held forward, blunt darker muzzle,
+   small ear at the back of the head, barrel body, short dark legs).
+2. Draw it **from scratch in its natural view** (a quadruped in profile, not the crab's
+   front view). Do not start from the crab: a reshaped crab reads as a crab.
+3. Give it volume: a dark outline (palette), a highlight along the top, base, a shadow
+   underneath, a separate darker muzzle or face patch, near legs and darker far legs.
+   Use the body `palette` for fixed colors (outline, nose, ear, legs) and `color` for its
+   base. Look at the built-in `capybara` (`/costume export capybara`) as a worked example.
+4. Preview it bare, look at the PNG at a large scale, and iterate until it is recognizable.
+5. Then make at least one skin for it with pieces drawn **for that body** (`"body": "<id>"`
+   on the piece), and preview the skin across every action.
+
+Every costume names its own body with `"body": { "id": "capybara" }`; a costume without an
+id is a crab. There is no crew-wide default: a crew mixes crabs, robots and capybaras by
+which skin each agent wears. `defaultBody` in rules is no longer read. Changing a built-in
+costume's body in the wardrobe writes a user override with the same id; never edit the
+installed built-in source.
 
 ### Body Contract
 
 A `type: "body"` object contains `id`, `name`, `layers`, `anchors`, `armLift`, and `eyes`:
 
+- Optional `color` (`#rrggbb`) is the body's base color when a costume names none (the
+  crab's is clay); a costume's `body.color` still wins. Optional `palette` maps up to 12
+  single characters (not H, B, S, dot or space) to fixed colors: outline, nose, ears, legs.
 - Each layer has integer `x`, `y`, `rows`, and `motion`. Rows use `H` (highlight), `B`
-  (body color), `S` (shadow), and dots/spaces (transparent), within the 18 by 14 card.
+  (body color), `S` (shadow), palette characters, and dots/spaces (transparent), within
+  the 18 by 14 card.
 - `motion` is `body`, `ground`, `claw.left`, `claw.right`, or `card`. Body follows bob,
   lift and horizontal shake; ground skips bob; claws also follow the corresponding arm.
   `armLift.left` and `.right` specify the displacement at raised arm state 1.
@@ -32,20 +51,24 @@ A `type: "body"` object contains `id`, `name`, `layers`, `anchors`, `armLift`, a
   Supply normal and kicking leg layers as needed. Layer order is paint order.
 - Every anchor (`card`, `body`, `head`, `face`, `claw.left`, `claw.right`, `ground`)
   supplies resting integer `x`, `y`, and `motion`. `card` must be fixed at 0, 0.
-  Accessories move by the selected anchor minus the resting crab anchor, plus pose motion.
+  A piece with `"body": "<id>"` is drawn in that body's own coordinates and moves only with
+  its anchor; it is refused on any other body. A piece without one was drawn on the crab
+  and is moved by the body's anchor minus the crab's. Held action props (book, pen, test
+  tube) go to the body's `claw.left`/`claw.right` anchors: put them where its paws are.
+- `eyes` may add `color`; a profile animal has one eye point.
 - `eyes.points` gives 1 to 8 positions; `height` is 1 to 3, `blink` is the closed-eye
   row offset, and `look` is the gaze displacement. The renderer handles open, blink,
   shut, left, right, up, red and facing-away poses. Width turns the whole sprite together.
 
-Start from an exported body rather than inventing anchors from memory. Keep shoulders,
-head and hands near the reference crab when reusing existing clothing. Fit checks all
+Keep the whole body, with jumps and shakes, inside the card: leave row 0 free and keep
+x within 0-17. Fit checks all
 body/eye pixels, accessory attachment, eye coverage, contrast and card bounds over actions.
 Incompatible wardrobe choices are noninteractive and display the first reason with body,
 costume, action and tick; repair the design before selecting them.
 
-Preview a body with `node tools/preview.ts --design robot.json --out robot.png`, or test
-an inherited species with `node tools/preview.ts --design outfit.json --body robot --out robot.png`.
-A costume with an explicit body keeps it. Complete preview and fit before installation.
+Preview a body alone with `node tools/preview.ts --design capybara.json --scale 12 --out capybara.png`,
+a skin with `--design capybara.json skin.json --costume <id>`, or try a costume on another body
+with `--body <id>` (the same fit check the wardrobe runs). Complete preview and fit before installation.
 
 
 Everything a crab wears or does consists of **JSON data** in `~/.claude/crabbus/*.json` (find the exact path with `/costume folder`, or legacy `/disfraz folder`). Files reload automatically in ~2 seconds without restarting plugins. Never edit plugin source code directly for a costume design.

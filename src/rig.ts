@@ -123,7 +123,11 @@ export type BodyDef = {
   layers: BodyLayer[]
   anchors: Record<Anchor, BodyPoint & { motion: BodyMotion }>
   armLift: { left: number; right: number }
-  eyes: { points: BodyPoint[]; height: number; blink: number; look: number }
+  eyes: { points: BodyPoint[]; height: number; blink: number; look: number; color?: number }
+  /** The body color a costume gets when it names none (the crab's is CLAY). */
+  color?: number
+  /** Fixed colors for the body's own row characters (a snout, ears, a belly), beside the H/B/S roles. */
+  palette?: Record<string, number>
   origin: string
   source: unknown
 }
@@ -148,10 +152,18 @@ export const bodyAnchorOffset = (body: BodyDef, anchor: Anchor, p: Pose): BodyPo
   return anchor === 'card' ? { x: 0, y: 0 } : { x: a.x - ref.x + off.x, y: a.y - ref.y + off.y }
 }
 
+/** How far an anchor has moved from its own resting point: for pieces drawn on that body itself. */
+export const bodyAnchorMotion = (body: BodyDef, anchor: Anchor, p: Pose): BodyPoint =>
+  anchor === 'card' ? { x: 0, y: 0 } : motionOffset(body, body.anchors[anchor].motion, p)
+
+/** Where a body's anchor rests relative to the crab's: moves what was drawn for the crab onto this body. */
+export const anchorShift = (body: BodyDef, anchor: Anchor): BodyPoint =>
+  anchor === 'card' ? { x: 0, y: 0 } : { x: body.anchors[anchor].x - CRAB_ANCHORS[anchor].x, y: body.anchors[anchor].y - CRAB_ANCHORS[anchor].y }
+
 const bodyPal = (color: number): Record<string, number> => ({ H: mix(color, 0xffffff, 0.22), B: color, S: mix(color, 0x000000, 0.28) })
 
-export const drawBody = (put: Put, ox: number, oy: number, color: number, p: Pose, body: BodyDef, eyeColor = INK): void => {
-  const pal = bodyPal(color)
+export const drawBody = (put: Put, ox: number, oy: number, color: number, p: Pose, body: BodyDef, eyeColor = body.eyes.color ?? INK): void => {
+  const pal = { ...bodyPal(color), ...body.palette }
   for (const layer of body.layers) {
     if (layer.when?.legs !== undefined && layer.when.legs !== p.legs) continue
     if (layer.when?.kick && !layer.when.kick.includes(p.kick ?? 'none')) continue

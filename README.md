@@ -447,12 +447,14 @@ DockCrab / Clawdy. Every sprite was redrawn by hand for the terminal. See
 
 ### Custom creatures
 
-CrabBus includes `crab` and `robot` bodies. The wardrobe selects a global fallback and an
-optional body per costume; incompatible choices show their fit reason and cannot be selected.
-Built-in costume changes create user overrides. A costume's `body.id` wins over
-`rules.defaultBody`, which wins over `crab`; existing body color fields keep working.
+CrabBus includes `crab`, `robot` and `capybara` bodies (the capybara is a side-view
+quadruped with its own colors and legs). Each skin names its body (`"body": { "id": "capybara" }`);
+a skin without one is a crab, so one crew can mix crabs, robots and capybaras. The wardrobe
+changes the picked skin's body; incompatible choices show their fit reason and cannot be
+selected. Built-in costume changes create user overrides. Pieces can be drawn for one body
+(`"body": "capybara"` on the piece).
 
-Export a body with `/costume export robot`. Body-only JSON can be previewed with
-`node tools/preview.ts --design robot.json --out robot.png`. To preview an outfit with a
-fallback species, add `--body robot`. The [design skill](skills/design/SKILL.md) documents
+Export a body with `/costume export capybara`. Body-only JSON can be previewed with
+`node tools/preview.ts --design capybara.json --out capybara.png`. To try an outfit on
+another body, add `--body robot`. The [design skill](skills/design/SKILL.md) documents
 layers, limb states, eyes and anchors and the preview/fit/install workflow.
