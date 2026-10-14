@@ -202,3 +202,8 @@ between the final read and write are not protected by a filesystem compare-and-s
 Use `/costume export robot` for a complete body schema. Exporting an outfit includes its
 effective body and pins that species in the exported costume, preserving its appearance
 when imported into a crew with another global fallback.
+
+Returning a same-ID built-in override to inheritance removes the override definition if
+it otherwise matches the built-in. A standalone override file becomes an empty bundle,
+so it no longer shadows future built-in updates. Unrelated rejected design files do not
+block valid body changes; a failure specific to another body removes only that outfit.

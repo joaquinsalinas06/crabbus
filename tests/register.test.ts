@@ -403,7 +403,7 @@ for (const surface of ['terminal', 'desktop'] as const) describe(`crabbus (${sur
     expect(await ui.find({ type: 'Text', text: /Body: crab \(costume\)/ })).toBeDefined()
     failWrite = false
     await ui.press({ key: 'wd-body-inherit-master' })
-    expect(JSON.parse(files['body-master.crab.json'] ?? '{}').body.id).toBeUndefined()
+    expect(JSON.parse(files['body-master.crab.json'] ?? '{}').type).toBe('bundle')
     expect(await ui.find({ type: 'Text', text: /Body: robot \(rules.defaultBody\)/ })).toBeDefined()
     await ui.unmount()
   })

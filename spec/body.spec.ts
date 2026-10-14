@@ -1,3 +1,4 @@
+import { SPANISH_USER_DESIGNS } from './fixtures/spanish-designs.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { BUILTIN, BODIES } from '../src/builtin.ts'
@@ -117,4 +118,53 @@ test('bodies: export carries effective species and supports standalone body expo
   assert.equal(effectiveBodyId(imported, 'other'), 'robot')
   const standalone = bundle(p, ['robot']).json as { items: any[] }
   assert.equal(standalone.items[0].type, 'body')
+})
+
+test('bodies: an incompatible non-crab outfit does not remove shared reference pieces', () => {
+  const b = robot(); b.id = 'shifted'; b.anchors.head.x = 17
+  const source = BUILTIN.costumes.master!.source as Record<string, unknown>
+  const p = loadPack([{ file: 'shifted.json', json: { type: 'bundle', items: [b,
+    { ...source, id: 'shifted-outfit', body: { id: 'shifted' } }] } }], BUILTIN)
+  assert.equal(p.costumes['shifted-outfit'], undefined)
+  assert.ok(p.costumes.master)
+  for (const piece of BUILTIN.costumes.master!.pieces) assert.equal(p.pieces[piece], BUILTIN.pieces[piece])
+})
+
+test('bodies: unrelated rejected files do not block a valid choice', () => {
+  const files = [{ file: 'broken.json', text: '{' }]
+  const p = loadPack(files, BUILTIN)
+  const edit = planBodyEdit(files, { op: 'setBody', costume: 'other', body: 'robot' }, p)
+  assert.equal(edit.ok, true)
+})
+
+test('bodies: selecting inheritance twice is a no-op and restoring a builtin removes its shadow', () => {
+  const noop = planBodyEdit([], { op: 'setBody', costume: 'other' }, BUILTIN)
+  assert.equal(noop.ok && noop.unchanged, true)
+  const explicit = planBodyEdit([], { op: 'setBody', costume: 'other', body: 'robot' }, BUILTIN)
+  assert.ok(explicit.ok)
+  if (!explicit.ok) return
+  const inherited = planBodyEdit(explicit.files, { op: 'setBody', costume: 'other' }, explicit.pack)
+  assert.ok(inherited.ok)
+  if (!inherited.ok) return
+  assert.equal(inherited.pack.costumes.other!.origin, BUILTIN.costumes.other!.origin)
+  assert.deepEqual(JSON.parse(inherited.text), { type: 'bundle', items: [] })
+})
+
+test('bodies: a later rules item cannot silently override the requested default', () => {
+  const files = [rules('crab'), { file: 'later.json', json: { type: 'bundle', items: [{ type: 'rules', defaultBody: 'robot' }] } }]
+  const p = loadPack(files, BUILTIN)
+  const edit = planBodyEdit(files, { op: 'setDefaultBody', body: 'crab' }, p)
+  assert.equal(edit.ok, false)
+  if (!edit.ok) assert.match(edit.error, /another rules item overrides/)
+})
+
+
+test('bodies: legacy bundles remain editable without rewriting their sibling items', () => {
+  const file = SPANISH_USER_DESIGNS[0]!
+  const p = loadPack([file], BUILTIN)
+  const costume = Object.values(p.costumes).find(c => c.origin === file.file)!
+  assert.ok(costume)
+  const edit = planBodyEdit([file], { op: 'setBody', costume: costume.id, body: 'crab' }, p)
+  assert.ok(edit.ok)
+  if (edit.ok) assert.equal(edit.pack.costumes[costume.id]!.bodyId, 'crab')
 })

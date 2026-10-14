@@ -270,6 +270,7 @@ function editBody($: EngineInterface, op: BodyOp): Promise<void> {
     await refreshDesigns($, true)
     const plan = planBodyEdit(designFiles, op, pack)
     if (!plan.ok) { void $.ui.toast(plan.error); return }
+    if (plan.unchanged) return
     const dir = await designsDir($)
     await $.fs.write(`${dir}/${plan.file}`, plan.text)
     await refreshDesigns($, true)
@@ -991,7 +992,7 @@ export const register: Register = (on, options) => {
       const [picked, crit] = [await read($, wdSel), await read($, wdCrit)]
       const chosen = m.rotation.find(c => c.id === picked) ?? m.rotation.find(c => c.isMaster) ?? m.rotation[0]
       const edit = (op: RuleOp) => () => void editRules($, op)
-      const bodyChoice = (key: string, label: string, selected: boolean, problems: readonly { msg: string }[], op: BodyOp) => problems.length
+      const bodyChoice = (key: string, label: string, selected: boolean, problems: readonly { msg: string }[], op: BodyOp) => selected ? <Text key={key} color={hex(C.dim)}>{`● ${label}`}</Text> : problems.length
         ? <Text key={key} color={hex(C.faint)} wrap="wrap">{`${label} — unavailable: ${problems[0]?.msg}`}</Text>
         : <Button key={key} plain={desktop ? undefined : true} onPress={() => editBody($, op)}>{`${selected ? '● ' : '○ '}${label}`}</Button>
       const bodyChoices = (costume?: WardrobeCostumeView) => <Box flexDirection="column" marginTop={1}>

@@ -10,7 +10,7 @@
 // (which check, which action, which tick) is reported in English.
 
 import { CARD_H, CARD_W } from './canvas.ts'
-import { compilePack, effectiveBodyId, planOf, renderAgent, without, type DesignFile, type Pack, type Problem, type CostumeDef, type Piece, type Action } from './pack.ts'
+import { BUILTIN_ORIGIN, compilePack, effectiveBodyId, planOf, renderAgent, without, type DesignFile, type Pack, type Problem, type CostumeDef, type Piece, type Action } from './pack.ts'
 import { TAG } from './rig.ts'
 
 const M = 8 // margin around the card, to see what spills
@@ -170,12 +170,13 @@ export const checkPack = (pack: Pack, only?: ReadonlySet<string>): FitReport => 
   const badActions = new Set<string>()
   const badCostumes = new Set<string>()
   let context = ''
+  let currentCostume = '', referenceBody = true
   const said = new Set<string>()
   const report = (id: string, kind: string, msg: string, file: string, isAction = false) => {
     if (said.has(`${context}:${id}:${kind}`)) return
     said.add(`${context}:${id}:${kind}`)
     problems.push({ file, id, msg: `${msg}${context}`, fatal: true })
-    ;(isAction ? badActions : badPieces).add(id)
+    ;(isAction ? badActions : referenceBody ? badPieces : badCostumes).add(isAction || referenceBody ? id : currentCostume)
   }
   // every piece is checked inside each costume that wears it; a piece nobody wears, on its own
   const cases: { costume: string; pack: Pack }[] = Object.keys(pack.costumes).map(costume => ({ costume, pack }))
@@ -183,12 +184,15 @@ export const checkPack = (pack: Pack, only?: ReadonlySet<string>): FitReport => 
   for (const id of Object.keys(pack.pieces)) {
     if (worn.has(id)) continue
     const solo = `(solo) ${id}`
-    cases.push({ costume: solo, pack: { ...pack, costumes: { ...pack.costumes, [solo]: { id: solo, name: id, color: 0x888780, body: 0xd97757, pieces: [id], origin: '', source: null } } } })
+    cases.push({ costume: solo, pack: { ...pack, costumes: { ...pack.costumes, [solo]: { id: solo, name: id, color: 0x888780, body: 0xd97757, bodyId: 'crab', pieces: [id], origin: '', source: null } } } })
   }
   const actions = Object.keys(pack.actions)
   for (const { costume, pack: p } of cases) {
     const d = p.costumes[costume]
     if (!d || (only && !d.pieces.some(id => only.has(id)) && !only.has(costume))) continue
+    currentCostume = costume
+    const rig = p.bodies[effectiveBodyId(p, costume)]
+    referenceBody = rig?.id === 'crab' && rig.origin === BUILTIN_ORIGIN
     context = ` [body "${effectiveBodyId(p, costume)}", costume "${costume}"]`
     for (const action of actions)
       for (let t = 0; t < CYCLE; t++) {

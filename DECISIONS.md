@@ -26,6 +26,11 @@
 | The wardrobe is a second view of the side panel, behind a tab row (`agents` · `wardrobe`) | A separate pane, or a button in the panel's header | One pane keeps one focus and one set of keys; a header button collided with the header's own facts. `/costume` opens the same view, and prints the rules as text where no panel can be drawn. |
 | Dynamic `pack.active` inheritance in `rules-edit.ts` | Overwriting active rotation with hardcoded defaults | Toggling an active costume in the UI when `rules.json` lacks an explicit `active` list inherits all currently active costumes rather than resetting the rotation to built-in presets. |
 | A rules edit is planned in memory (`src/rules-edit.ts`): only the files that carry rules are compiled again over the pack in use, then the change is shown and the file written | Validating with a full `loadPack` before every write | A full reload fit-checks every costume: about 590 ms on six user designs, during which the crabs stop. Rules never change a costume's pixels, so recompiling only the rules (0.3 ms) gives the same pack, which a spec checks against a full reload. A file that is not valid JSON, or a pattern the pack refuses, is never written; the edit is refused with the reason. |
+| Body as data; crab kept pixel-identical | A renderer branch for each creature | One Pose interpreter draws editable body layers and anchors; existing golden fingerprints stay unchanged. |
+| `costume.body.id` before `rules.defaultBody` before crab | A global default overriding explicit costume choices | A default supplies missing choices; removing an ID restores inheritance without migrating old files. |
+| Built-in body choices save same-ID user costume overrides | Editing the installed built-in source | User changes persist without changing shared artwork or losing sibling bundle items. |
+| Body selectors fit-check before enabling and again before saving | Accepting a selection then silently hiding incompatible pieces | The visible body/costume/action/tick reason explains what must be repaired; cached results last only for the current pack revision. |
+
 
 ## Unverified assumptions (what breaks if wrong)
 
@@ -33,8 +38,3 @@
 - The band's `maxRows` is the only height limit (if not, the stage may scroll).
 - `$.state` survives a hot reload (designed for, unverified); module timers restart on reload.
 - `$.session.messages({ agentId, as: 'api' })` reads a running background subagent's transcript (if not, the detail falls back to the hooks' tool log).
-
-| Body as data; crab kept pixel-identical | A renderer branch for each creature | One Pose interpreter draws editable body layers and anchors; existing golden fingerprints stay unchanged. |
-| `costume.body.id` before `rules.defaultBody` before crab | A global default overriding explicit costume choices | A default supplies missing choices; removing an ID restores inheritance without migrating old files. |
-| Built-in body choices save same-ID user costume overrides | Editing the installed built-in source | User changes persist without changing shared artwork or losing sibling bundle items. |
-| Body selectors fit-check before enabling and again before saving | Accepting a selection then silently hiding incompatible pieces | The visible body/costume/action/tick reason explains what must be repaired; cached results last only for the current pack revision. |
