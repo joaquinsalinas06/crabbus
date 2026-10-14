@@ -299,7 +299,7 @@ crowned master.
 |---|---|
 | **Claude Code (terminal)** | 2.1.296 or newer |
 | **Claude Desktop** | local Claude Code session with mods support; bundled engine 2.1.295 kit-tested |
-| **Terminal** | truecolor recommended. In 256-color terminals the crabs are approximated |
+| **Terminal** | truecolor recommended. In 256-color terminals the crabs are approximated. Checked on iTerm2; Terminal.app needs macOS 26 (Tahoe) or newer. Run `sh tools/check-terminal.sh` to see whether yours draws the colors |
 | **Size** | about 19 rows or more for the crab band; the panel adapts down to narrow widths |
 | **OS** | tested on **macOS**. Linux should work (nothing is OS-specific). Windows is untested |
 | **tmux** | ❌ not needed |
