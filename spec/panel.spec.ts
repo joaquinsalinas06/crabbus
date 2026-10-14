@@ -51,7 +51,7 @@ test('uiStatus: working, thinking, waiting, blocked, done, failed come from reco
   assert.equal(uiStatus(s, ag(s, 'a')), 'working', 'running a tool after asking is no longer waiting')
   s = onPermissionAsk(s, { id: 'p', agentId: 'a', tool: 'Bash', arg: 'rm -rf x', at: 50 })
   assert.equal(uiStatus(s, ag(s, 'a')), 'blocked')
-  assert.match(statusReport(s, 60), /PERMISSION waiting/)
+  assert.match(statusReport(s, 60), /PERMISSION requested/)
   s = onPermissionAnswer(s, 'p', 'allow', 60)
   assert.equal(uiStatus(s, ag(s, 'a')), 'working')
   assert.equal(s.activity?.[0]?.text, 'approved Bash rm -rf x')

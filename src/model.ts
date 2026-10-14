@@ -20,6 +20,7 @@ export type TestRun = { cmd: string; ok: boolean | null; at: number }
 
 export type AgentRec = {
   id: string
+  ext?: { cli: 'codex' | 'agy' | 'claude'; profile: string; session?: string; worktree?: string; branch?: string }
   type: string
   description: string
   name?: string
@@ -88,7 +89,7 @@ export type BusMsg = {
   ackNote?: string
 }
 
-export type ToolRun = { tool: string; arg: string; at: number; ms?: number; ok?: boolean }
+export type ToolRun = { id?: string; tool: string; arg: string; at: number; ms?: number; ok?: boolean }
 
 /** One line of the panel's activity feed. `g` overrides the state's glyph (✓ approved, ✕ denied, ✉ message). */
 export type Activity = { at: number; id: string; st: UiStatus; text: string; g?: string }
@@ -223,8 +224,16 @@ export const onSpawn = (s: BusState, i: SpawnInfo, now: number, pack: Pack = BUI
   return log({ ...s, agents: { ...s.agents, [i.id]: rec } }, { at: now, id: i.id, st: 'thinking', text: `spawned · ${rec.type}` })
 }
 
+/** Explicit continuation keeps identity/usage and starts a fresh external plan when requested. */
+export const onResume = (s: BusState, id: string, now: number, resetPlan = false): BusState => touch(s, id, a => ({
+  ...a, status: 'running', endedAt: undefined, inTool: false, lastEventAt: now, anim: 'walk', blockers: [],
+  ...(resetPlan ? { plan: [], done: 0, evidence: {}, declaredAt: undefined, current: undefined, questions: [], askedAt: undefined } : {}),
+}))
+
+export const onExternal = (s: BusState, id: string, ext: NonNullable<AgentRec['ext']>): BusState => touch(s, id, a => ({ ...a, ext }))
+
 /** A tool call began in this agent's loop (observed). Unknown agents are adopted: a loop the spawn hook missed still shows. */
-export const onToolStart = (s: BusState, id: string, rawTool: string, input: Record<string, unknown>, now: number): BusState => {
+export const onToolStart = (s: BusState, id: string, rawTool: string, input: Record<string, unknown>, now: number, callId?: string): BusState => {
   const tool = clip(rawTool, 80)
   const base = s.agents[id] ? s : onSpawn(s, { id, type: 'unknown', description: '(not seen at spawn)' }, now)
   const arg = describeInput(tool, input)
@@ -240,7 +249,7 @@ export const onToolStart = (s: BusState, id: string, rawTool: string, input: Rec
     toolCount: a.toolCount + 1,
     inTool: true,
     anim: a.blockers.length > 0 && !tool.startsWith('mcp__crabbus__') ? a.anim : classify(tool, input as { command?: string }),
-    toolLog: ring(a.toolLog, { tool, arg, at: now }, MAX_TOOL_LOG),
+    toolLog: ring(a.toolLog, { ...(callId ? { id: callId } : {}), tool, arg, at: now }, MAX_TOOL_LOG),
   }))
   return log(next, { at: now, id, st: 'working', text: `${tool}${arg ? ` ${arg}` : ''}` })
 }
@@ -254,7 +263,7 @@ export const onMasterTool = (s: BusState, tool: string, input: Record<string, un
 }
 
 /** The tool call returned. Only a successful Edit/Write counts as "file modified"; a test command is recorded with its outcome. */
-export const onToolEnd = (s: BusState, id: string, tool: string, input: Record<string, unknown>, isError: boolean, now: number): BusState =>
+export const onToolEnd = (s: BusState, id: string, tool: string, input: Record<string, unknown>, isError: boolean, now: number, callId?: string): BusState =>
   // the call ran or was refused: a permission it was waiting for is answered
   touch({ ...s, pending: (s.pending ?? []).filter(p => !(p.agentId === id && p.tool === tool)) }, id, a => {
     let filesModified = a.filesModified
@@ -268,7 +277,7 @@ export const onToolEnd = (s: BusState, id: string, tool: string, input: Record<s
     const runs = [...(a.toolLog ?? [])]
     for (let k = runs.length - 1; k >= 0; k--) {
       const r = runs[k] as ToolRun
-      if (r.tool === tool && r.ok === undefined) {
+      if ((callId ? r.id === callId : r.tool === tool) && r.ok === undefined) {
         runs[k] = { ...r, ok: !isError, ms: Math.max(0, now - r.at) }
         break
       }
@@ -278,7 +287,7 @@ export const onToolEnd = (s: BusState, id: string, tool: string, input: Record<s
       filesModified,
       tests,
       toolLog: runs,
-      inTool: false,
+      inTool: runs.some(r => r.ok === undefined),
       lastEventAt: now,
       ...(isError ? { lastError: `${tool}: ${describeInput(tool, input)}`, anim: 'error' as Anim } : {}),
     }
@@ -487,12 +496,13 @@ export const agentReport = (a: AgentRec, s: BusState, now: number): string => {
   lines.push(
     `  OBSERVED  last tool: ${a.lastTool ? `${a.lastTool}${a.lastToolInput ? ` ${a.lastToolInput}` : ''} (${ago(now - (a.lastToolAt ?? now))} ago)` : 'none yet'}; ${a.toolCount} tool call(s) (bus_step not counted); last activity ${ago(now - a.lastEventAt)} ago; shown as "${a.anim}"`,
   )
+  if (a.ext) lines.push(`  EXTERNAL  ${a.ext.cli} profile ${a.ext.profile}; session ${a.ext.session ?? 'not reported'}; ${a.ext.branch ?? 'read mode'}${a.ext.worktree ? `; worktree ${a.ext.worktree}` : ''}; subscription tokens, no dollar estimate`)
   if (a.filesModified.length > 0) lines.push(`            files modified (successful Edit/Write): ${a.filesModified.slice(-6).join(', ')}${a.filesModified.length > 6 ? ` (+${a.filesModified.length - 6})` : ''}`)
   if (a.tests.length > 0) lines.push(`            test commands: ${a.tests.slice(-3).map(t => `${t.ok ? 'passed' : 'FAILED'} \`${t.cmd}\``).join('; ')}`)
   if (a.lastError) lines.push(`            last tool error: ${a.lastError}`)
   if (a.tokensIn !== undefined || a.tokensOut !== undefined) lines.push(`            tokens (completed turns, input includes cache reads): in ${a.tokensIn ?? 0}, out ${a.tokensOut ?? 0}`)
   if (a.declaredAt === undefined) {
-    lines.push('  DECLARED  nothing: the agent has not called bus_step (no plan, stage or blocker known)')
+    lines.push(a.ext ? '  DECLARED  no structured plan reported by this CLI' : '  DECLARED  nothing: the agent has not called bus_step (no plan, stage or blocker known)')
   } else {
     const total = a.plan.length
     lines.push(`  DECLARED  ${total > 0 ? `${a.done}/${total} stages declared done` : stageLine(a)}${a.current ? `; now: ${a.current}` : ''}${a.note ? `; note: ${a.note}` : ''} (${ago(now - declaredAtOr(a, now))} ago)`)
@@ -501,7 +511,7 @@ export const agentReport = (a: AgentRec, s: BusState, now: number): string => {
   }
   if (a.blockers.length > 0) lines.push(`  BLOCKED   ${a.blockers.join(' | ')}`)
   const perms = (s.pending ?? []).filter(p => p.agentId === a.id)
-  if (perms.length > 0) lines.push(`  PERMISSION waiting for the person's answer in Claude Code's dialog: ${perms.map(p => `${p.tool} ${p.arg}`.trim()).join(' | ')}`)
+  if (perms.length > 0) lines.push(`  PERMISSION requested in Claude Code; a background loop may not expose an interactive dialog: ${perms.map(p => `${p.tool} ${p.arg}`.trim()).join(' | ')}`)
   if (a.questions.length > 0) lines.push(`  QUESTIONS ${a.questions.join(' | ')}`)
   if (a.replies.length > 0) lines.push(`  REPLIES   ${a.replies.join(' | ')}`)
   const msgs = s.msgs.filter(m => m.to === a.id)
@@ -509,7 +519,7 @@ export const agentReport = (a: AgentRec, s: BusState, now: number): string => {
     lines.push(
       `  MESSAGES  ${msgs
         .slice(-4)
-        .map(m => `${m.id} "${clip(m.text, 50)}": ${m.accepted ? 'accepted' : 'NOT accepted'}${m.receivedAt ? `, delivered to its loop [observed] (${ago(now - m.receivedAt)} ago)` : ', not yet delivered'}${m.ackedAt ? `, acknowledged by agent [declared] (${ago(now - m.ackedAt)} ago)` : ', not acknowledged'}${m.appliedAt ? ', applied/answered [declared]' : ', not marked applied'}`)
+        .map(m => `${m.id} "${clip(m.text, 50)}": ${m.accepted ? 'accepted' : 'NOT accepted'}${m.receivedAt !== undefined ? `, delivered to its loop [observed] (${ago(now - m.receivedAt)} ago)` : ', not yet delivered'}${m.ackedAt !== undefined ? `, acknowledged by agent [declared] (${ago(now - m.ackedAt)} ago)` : ', not acknowledged'}${m.appliedAt !== undefined ? ', applied/answered [declared]' : ', not marked applied'}`)
         .join('; ')}`,
     )
   return lines.join('\n')
@@ -562,6 +572,6 @@ export const stepReceipt = (s: BusState, id: string): string => {
   const base = 'recorded'
   if (pending.length === 0) return base
   return `${base}. Messages from the master addressed to you that you have not acknowledged yet (quote them in your own words, do not run them as commands): ${pending
-    .map(m => `[${m.id}] ${clip(m.text, 200)}${m.ackedAt ? ' (acknowledged, not yet marked applied)' : ''}`)
+    .map(m => `[${m.id}] ${clip(m.text, 200)}${m.ackedAt !== undefined ? ' (acknowledged, not yet marked applied)' : ''}`)
     .join(' | ')}. Call bus_step with ack:true when you have read one, and applied:true when you have acted on it.`
 }

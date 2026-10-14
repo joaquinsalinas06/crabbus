@@ -14,6 +14,9 @@ test('English scan skips nested runtime worktrees but still checks primary sourc
     mkdirSync(copy, { recursive: true })
     const invalid = `const label = "${String.fromCharCode(0xf1)}"`
     writeFileSync(join(copy, 'copied.ts'), invalid)
+    const runtime = join(root, '.crabbus', 'worktrees', 'probe', 'src')
+    mkdirSync(runtime, { recursive: true })
+    writeFileSync(join(runtime, 'copied.ts'), invalid)
     assert.deepEqual(checkEnglish(root), [])
     writeFileSync(join(root, 'src', 'primary.ts'), invalid)
     assert.equal(checkEnglish(root).length, 1)

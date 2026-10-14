@@ -1,0 +1,7 @@
+{
+  "agent": "ext-probe",
+  "status": "done",
+  "result": "The requested runtime probe tasks have been completed:\n\n1. Created [external-safe.txt](file:///workspace/external-safe.txt) containing `hello from safe mode`.\n2. Appended `// external safe runtime probe` to [src/text.ts](file:///workspace/src/text.ts#L163).\n\nAll changes and new files have been left in place for master review without running commands, committing, or delegating.\n",
+  "error": "",
+  "changes": "Branch: crabbus/agy-ext-probe\nWorktree: /workspace\nDiffstat:\n src/text.ts | 2 ++\n 1 file changed, 2 insertions(+)\n\nUntracked:\nexternal-safe.txt\n"
+}
