@@ -9,7 +9,8 @@ import type { EngineInterface, FsEntry, Register, RenderChildren, RenderElement,
 import { CARD_H, CARD_W, canvas, cellsOf, drawAgent } from '../src/art.ts'
 import type { Canvas } from '../src/canvas.ts'
 import { barSvg, sparkSvg, toSvg } from '../src/svg.ts'
-import { externalConfig, externalArgv, externalParser, externalLines, AGY_AUTO_ERROR, type ExternalConfig, type ExternalAgent, type ExtEvent } from '../src/external.ts'
+import { externalConfig, externalUsageDelta, externalArgv, externalParser, externalLines, AGY_AUTO_ERROR, type ExternalConfig, type ExternalAgent, type ExtEvent } from '../src/external.ts'
+import type { Usage } from '../src/price.ts'
 import { BUILTIN } from '../src/builtin.ts'
 import { MASTER, direct, emptyDirector, playOf, type Director } from '../src/director.ts'
 import { loadPack } from '../src/fit.ts'
@@ -520,7 +521,7 @@ let externalError = ''
 let externalFrameMs = 167, externalStill = false
 const available = new Set<string>()
 type Job = { id: string; name: string; cfg: ExternalAgent; mode: 'edit' | 'read'; cwd: string; branch?: string; session?: string;
-  queue: string[]; turns: number; running: boolean; prepared: boolean; stopped?: string; stream?: HookStream<ProcessSpawnChunk, ProcessSpawnResult> }
+  usage?: Usage; usageSession?: string; discarded?: number; queue: string[]; turns: number; running: boolean; prepared: boolean; stopped?: string; stream?: HookStream<ProcessSpawnChunk, ProcessSpawnResult> }
 const jobs = new Map<string, Job>()
 let pendingStarts = 0
 const mainTurns = new Set<string>()
@@ -558,6 +559,7 @@ const changes = async ($: EngineInterface, j: Job): Promise<string> => {
 }
 const stopJob = async (j: Job, reason: string): Promise<void> => {
   j.stopped = reason
+  j.discarded = (j.discarded ?? 0) + j.queue.length
   j.queue.length = 0
   if (j.stream) await j.stream.return({ code: null, signal: 'SIGTERM' }).catch(() => undefined)
 }
@@ -608,7 +610,7 @@ const runJob = async ($: EngineInterface, j: Job): Promise<void> => {
     const env: Record<string, string> = { ...j.cfg.env, ...(j.cfg.cli === 'claude' ? { CLAUDECODE: '' } : {}) }
     const profile = env['CLAUDE_CONFIG_DIR']
     if (profile?.startsWith('~/')) { const home = await $.env.get('HOME'); if (!home) throw Error('HOME is required to expand a Claude profile path'); env['CLAUDE_CONFIG_DIR'] = `${home}/${profile.slice(2)}` }
-    const task = `${prompt}\n\nCrabBus external task: do not commit, merge, remove the worktree, or delegate to other agents. Leave edits and new files for the master to review. ${j.mode === 'read' ? 'Read only; do not edit project files.' : 'Work only in the supplied working directory.'}`
+    const task = `CrabBus task:\n${prompt}\n\nCrabBus external task: do not commit, merge, remove the worktree, or delegate to other agents. Leave edits and new files for the master to review. ${j.mode === 'read' ? 'Read only; do not edit project files.' : 'Work only in the supplied working directory.'}`
     const parse = externalParser(j.cfg.cli)
     const events: ExtEvent[] = []
     const lines = externalLines(line => { if (line.trim()) { try { JSON.parse(line) } catch { stderr = `${stderr}\n${line}`.slice(-4000) }; events.push(...parse(line)) } }, 1048576, () => { stderr = `${stderr}\nCLI output line exceeded 1 MiB and was discarded`.slice(-4000) })
@@ -623,7 +625,11 @@ const runJob = async ($: EngineInterface, j: Job): Promise<void> => {
           ? onToolStart(s, j.id, event.name, event.input, t, event.id) : onToolEnd(s, j.id, event.name, event.input, event.ok === false, t, event.id))
         if (event.kind === 'plan') await record($, (s, t) => onStep(s, j.id, { plan: event.items, done: event.done }, t))
         if (event.kind === 'text') { result = `${result}${result && j.cfg.cli !== 'agy' ? '\n' : ''}${event.text}`.slice(-4000); if (event.text.trim()) await record($, (s, t) => onStep(s, j.id, { note: event.text.slice(0, 400) }, t)) }
-        if (event.kind === 'usage') await record($, (s, t) => onUsage(s, j.id, event.usage, j.cfg.model, t))
+        if (event.kind === 'usage') {
+          const usage = event.scope === 'session' ? externalUsageDelta(event.usage, j.usageSession === j.session ? j.usage : undefined) : event.usage
+          if (event.scope === 'session') { j.usage = event.usage; j.usageSession = j.session }
+          await record($, (s, t) => onUsage(s, j.id, usage, j.cfg.model, t))
+        }
         if (event.kind === 'denied') { const message = `Denied by ${j.cfg.cli}: ${event.tool} ${event.arg}`; if (!denied.has(message)) { denied.add(message); await record($, (s, t) => onStep(s, j.id, { blocker: message }, t)) } }
         if (event.kind === 'done') { terminal = event.ok; if (event.result) result = event.result.slice(-4000) }
       }
@@ -645,8 +651,9 @@ const runJob = async ($: EngineInterface, j: Job): Promise<void> => {
     const summary = await changes($, j)
     await record($, (s, t) => onComplete(onStep(s, j.id, { reply: (error || result || 'No response text.').slice(0, 400) }, t), j.id,
       { reason: j.stopped ? 'aborted' : error ? 'error' : 'answer' }, t)).catch(e => { externalError = `Completion state: ${String(e)}` })
-    if (!j.session) j.queue.length = 0
-    notices.push(JSON.stringify({ agent: j.id, status: j.stopped ? 'killed' : error ? 'failed' : 'done', result, error, denied: [...denied], ...(error && stderr ? { diagnostic: stderr } : {}), changes: summary }))
+    if (!j.session) { j.discarded = (j.discarded ?? 0) + j.queue.length; j.queue.length = 0 }
+    notices.push(JSON.stringify({ agent: j.id, status: j.stopped ? 'killed' : error ? 'failed' : 'done', result, error, discardedQueuedMessages: j.discarded ?? 0, denied: [...denied], ...(error && stderr ? { diagnostic: stderr } : {}), changes: summary }))
+    j.discarded = 0
     j.running = false
     scheduleNotices($)
     launchQueued($)
@@ -693,7 +700,8 @@ const delegate = async ($: EngineInterface, args: Record<string, unknown>): Prom
   jobs.set(id, j)
   await record($, (s, t) => onExternal(onSpawn(s, { id, name, type: cfg.cli, description, model: cfg.model, mode, prompt }, t, pack), id, metadata(j))).catch(e => { jobs.delete(id); throw e })
   pendingStarts--; reserved = false
-  launchQueued($)
+  j.running = true
+  void runJob($, j).catch(e => { externalError = `External runner: ${String(e)}` })
   ensureClock($, externalFrameMs, externalStill)
   await autoOpen($)
   return `${id} started${dirty ? `; the worktree starts from HEAD; ${dirty} uncommitted files are not in it` : ''}`
@@ -1518,7 +1526,7 @@ export const register: Register = (on, options) => {
               <Text wrap={desktop ? 'wrap' : 'truncate-end'} color={hex(C.dim)}>{`${v.role} · ${v.model}`}</Text>
               <Box flexDirection="row">{chip(v.st)}</Box>
               <Text wrap={desktop ? 'wrap' : 'truncate-end'} color={hex(C.text)}>{v.summary}</Text>
-              {a.ext && (jobs.get(a.id)?.running || jobs.get(a.id)?.queue.length) && <Button key={`kill-${a.id}`} onPress={() => killExternal($, a.id)}>Stop external agent</Button>}
+              {a.ext && (jobs.get(a.id)?.running || (jobs.get(a.id)?.queue.length ?? 0) > 0) && <Button key={`kill-${a.id}`} onPress={() => killExternal($, a.id)}>Stop external agent</Button>}
               {v.permission && <Text color={hex(C.pink)} wrap="truncate-end">{TEXT.answerInDialog}</Text>}
               <Box flexDirection="row" gap={1}>
                 <Button key="prev" hotkey="p" plain={desktop ? undefined : true} onPress={go(-1)}>‹</Button>

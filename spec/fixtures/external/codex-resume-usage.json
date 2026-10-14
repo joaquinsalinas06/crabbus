@@ -1,0 +1,13 @@
+{
+  "source": "Codex 0.160.0 session token_count telemetry from the real bus_delegate resume probe",
+  "before": {
+    "input_tokens": 164123,
+    "cached_input_tokens": 135168,
+    "output_tokens": 610
+  },
+  "after": {
+    "input_tokens": 256646,
+    "cached_input_tokens": 216320,
+    "output_tokens": 757
+  }
+}
