@@ -469,8 +469,8 @@ the `externalAgents` plugin option as a JSON string containing this object:
 Only configured executables that answer `--version` appear in the tool description. The panel
 names them readably (Codex, Antigravity, `Claude · claude-r`), or by an optional `label`.
 A configuration value never becomes a flag: `allow` entries, `model` and session ids cannot
-start with `-`, and `env` cannot set variables that make a CLI load other code (`PATH`,
-`NODE_OPTIONS`, `LD_*`, `DYLD_*`, `GIT_*`, `BASH_ENV`, `PYTHONPATH` and similar). Completion
+start with `-`, `env` can only set `CLAUDE_CONFIG_DIR` or `CODEX_HOME` (where each CLI keeps its account),
+and `allow` takes file tools and `Bash(<command>:*)` entries only, never Bash at large. Completion
 entries tell the master they are data to review, not instructions; a turn that changed
 nothing because its commands were denied carries a warning instead of a bare "done".
 A new call takes `agent`, `prompt`, `description`, and optional `mode` (`edit` by default,

@@ -150,7 +150,13 @@ test('external config refuses flags and code-loading environment that a reposito
     '{"agents":{"a":{"cli":"codex","env":{"PATH":"/tmp/evil"}}}}',
     '{"agents":{"a":{"cli":"codex","env":{"DYLD_INSERT_LIBRARIES":"x"}}}}',
     '{"agents":{"a":{"cli":"codex","env":{"git_dir":"x"}}}}',
+    '{"agents":{"a":{"cli":"codex","env":{"SSL_CERT_FILE":"x"}}}}',
+    '{"agents":{"a":{"cli":"claude","allow":["Bash"]}}}',
+    '{"agents":{"a":{"cli":"claude","allow":["Bash(*)"]}}}',
+    '{"agents":{"a":{"cli":"claude","allow":["Bash(npm test; curl x:*)"]}}}',
+    '{"agents":{"a":{"cli":"claude","allow":["WebFetch"]}}}',
   ]) assert.throws(() => externalConfig(raw), undefined, raw)
+  assert.deepEqual(externalConfig('{"agents":{"a":{"cli":"claude","allow":["Bash(npm test:*)","Bash(node --test:*)","Edit"]}}}').agents.a!.allow, ['Bash(npm test:*)', 'Bash(node --test:*)', 'Edit'])
   assert.equal(externalConfig('{"agents":{"a":{"cli":"claude","env":{"CLAUDE_CONFIG_DIR":"~/.claude-r"}}}}').agents.a!.env!.CLAUDE_CONFIG_DIR, '~/.claude-r')
 })
 
