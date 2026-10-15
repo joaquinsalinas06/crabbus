@@ -1,8 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { externalConfig, externalUsageDelta, externalArgv, externalParser, externalLines, AGY_AUTO_ERROR, type ExternalCli, type ExtEvent } from '../src/external.ts'
-import { emptyState, onSpawn, onExternal, onResume, onUsage, onToolStart, onToolEnd } from '../src/model.ts'
+import { externalConfig, externalLabel, safeSession, CLAUDE_SANDBOX, externalTaskNote, externalUsageDelta, externalArgv, externalParser, externalLines, AGY_AUTO_ERROR, type ExternalCli, type ExtEvent } from '../src/external.ts'
+import { emptyState, statusReport, onSpawn, onExternal, onResume, onUsage, onToolStart, onToolEnd } from '../src/model.ts'
 import { agentView, listModel, detailModel } from '../src/panel.ts'
 
 const fixture = (file: string) => readFileSync(new URL(`./fixtures/external/${file}.jsonl`, import.meta.url), 'utf8')
@@ -116,4 +116,49 @@ test('external Claude resume usage remains per invocation, unlike Codex snapshot
   assert.ok(first?.kind === 'usage' && next?.kind === 'usage')
   assert.equal(first.scope, 'turn'); assert.equal(next.scope, 'turn')
   assert.equal(first.usage.output + next.usage.output, 975)
+})
+
+test('external labels read as products, with the profile when it says more, or as configured', () => {
+  assert.equal(externalLabel('agy', { cli: 'agy' }), 'Antigravity')
+  assert.equal(externalLabel('codex', { cli: 'codex' }), 'Codex')
+  assert.equal(externalLabel('claude-r', { cli: 'claude' }), 'Claude · claude-r')
+  assert.equal(externalLabel('safe', { cli: 'agy', label: 'Antigravity Flash' }), 'Antigravity Flash')
+  assert.equal(externalConfig('{"agents":{"a":{"cli":"agy","label":" Fast "}}}').agents.a!.label, 'Fast')
+  for (const label of ['""', '"' + 'x'.repeat(41) + '"']) assert.throws(() => externalConfig(`{"agents":{"a":{"cli":"agy","label":${label}}}}`))
+})
+
+test('Antigravity safe edits are told they have no terminal; other CLIs and read mode are not', () => {
+  assert.match(externalTaskNote({ cli: 'agy' }, 'edit'), /no terminal/)
+  assert.equal(externalTaskNote({ cli: 'agy' }, 'read'), '')
+  assert.equal(externalTaskNote({ cli: 'codex' }, 'edit'), '')
+})
+
+test('bus_status finds an external agent by the start of its id', () => {
+  let s = onSpawn(emptyState(), { id: 'ext-09dbdcaa-4786-4137', type: 'agy', description: 'document a constant' }, 1)
+  s = onExternal(s, 'ext-09dbdcaa-4786-4137', { cli: 'agy', profile: 'agy', label: 'Antigravity' })
+  const report = statusReport(s, 2, 'ext-09dbdcaa')
+  assert.match(report, /Antigravity \(agy, profile agy\)/)
+  assert.doesNotMatch(report, /No agent matches/)
+  assert.match(statusReport(s, 2, 'ext'), /No agent matches/)
+})
+
+test('external config refuses flags and code-loading environment that a repository setting could inject', () => {
+  for (const raw of [
+    '{"agents":{"a":{"cli":"claude","allow":["--dangerously-skip-permissions"]}}}',
+    '{"agents":{"a":{"cli":"codex","model":"--full-auto"}}}',
+    '{"agents":{"a":{"cli":"claude","env":{"NODE_OPTIONS":"--require /tmp/x.js"}}}}',
+    '{"agents":{"a":{"cli":"codex","env":{"PATH":"/tmp/evil"}}}}',
+    '{"agents":{"a":{"cli":"codex","env":{"DYLD_INSERT_LIBRARIES":"x"}}}}',
+    '{"agents":{"a":{"cli":"codex","env":{"git_dir":"x"}}}}',
+  ]) assert.throws(() => externalConfig(raw), undefined, raw)
+  assert.equal(externalConfig('{"agents":{"a":{"cli":"claude","env":{"CLAUDE_CONFIG_DIR":"~/.claude-r"}}}}').agents.a!.env!.CLAUDE_CONFIG_DIR, '~/.claude-r')
+})
+
+test('every external Claude run has Bash in the OS sandbox; only plain session ids are passed back', () => {
+  const argv = externalArgv({ cli: 'claude', allow: ['Bash(npm test:*)'] }, 'task', '/repo', 'edit')
+  assert.equal(argv[argv.indexOf('--settings') + 1], CLAUDE_SANDBOX)
+  assert.equal(JSON.parse(CLAUDE_SANDBOX).sandbox.enabled, true)
+  assert.equal(safeSession('--dangerously-skip-permissions'), undefined)
+  assert.equal(safeSession('01a13c34-a8fa-70d0-9fd3-c2a624d89867'), '01a13c34-a8fa-70d0-9fd3-c2a624d89867')
+  assert.ok(!externalArgv({ cli: 'codex' }, 'task', '/repo', 'edit', '-x').includes('resume'))
 })

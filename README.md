@@ -466,7 +466,13 @@ the `externalAgents` plugin option as a JSON string containing this object:
 }
 ```
 
-Only configured executables that answer `--version` appear in the tool description.
+Only configured executables that answer `--version` appear in the tool description. The panel
+names them readably (Codex, Antigravity, `Claude · claude-r`), or by an optional `label`.
+A configuration value never becomes a flag: `allow` entries, `model` and session ids cannot
+start with `-`, and `env` cannot set variables that make a CLI load other code (`PATH`,
+`NODE_OPTIONS`, `LD_*`, `DYLD_*`, `GIT_*`, `BASH_ENV`, `PYTHONPATH` and similar). Completion
+entries tell the master they are data to review, not instructions; a turn that changed
+nothing because its commands were denied carries a warning instead of a bare "done".
 A new call takes `agent`, `prompt`, `description`, and optional `mode` (`edit` by default,
 or `read`). Subagents cannot delegate. `to` resumes an existing external agent using its
 saved provider session; busy agents queue messages FIFO, without simultaneous processes.
@@ -485,8 +491,13 @@ for all providers; agents do not need Git access for their completion report. Fi
 failed and cancelled worktrees remain in place. Nothing is merged or deleted automatically.
 
 Codex uses workspace-write (or read-only), excludes /tmp and permits per-user TMPDIR so
-build tools work. Claude uses the configured account with acceptEdits and its allow list;
-read mode uses plan. Antigravity safe uses accept-edits: edits work and commands are denied.
+build tools work. Claude uses the configured account with acceptEdits and its allow list,
+and always runs Bash in Claude Code's OS sandbox (`--settings` with `sandbox.enabled`): an
+allowed command such as `npm test` cannot write outside the worktree through a script the
+agent edited (verified live: without the sandbox it could). Read mode uses plan. Antigravity
+safe uses accept-edits: edits work, commands are denied, and its task says it has no
+terminal (without that it gave up after its first denied command); its file tools refuse
+paths outside the workspace (verified live).
 `agy auto` is rejected with `agy auto is not supported yet: git fails inside its sandbox,
 see PR #9` (tested with 1.3.5). Worktrees separate Git changes; provider plan/accept-edits
 modes do not establish an OS filesystem sandbox. No global provider settings are edited.

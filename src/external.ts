@@ -2,12 +2,24 @@
 import type { Usage } from './price.ts'
 
 export type ExternalCli = 'codex' | 'agy' | 'claude'
-export type ExternalAgent = { cli: ExternalCli; model?: string; env?: Record<string, string>; allow?: string[]; level?: 'safe' | 'auto' }
+export type ExternalAgent = { cli: ExternalCli; model?: string; env?: Record<string, string>; allow?: string[]; level?: 'safe' | 'auto'; label?: string }
 export type ExternalConfig = { maxConcurrent: number; maxMinutes: number; agents: Record<string, ExternalAgent> }
 export const AGY_AUTO_ERROR = 'agy auto is not supported yet: git fails inside its sandbox, see PR #9'
 const obj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const text = (v: unknown): string => typeof v === 'string' ? v : ''
 const count = (v: unknown): number => typeof v === 'number' && Number.isFinite(v) ? Math.max(0, v) : 0
+
+// Variables that make a child load or run other code, or change where its sandbox points: never
+// taken from the configuration, which a repository's settings could otherwise supply.
+const UNSAFE_ENV = /^(PATH|NODE_OPTIONS|NODE_PATH|BASH_ENV|ENV|SHELL|HOME|PYTHONPATH|PYTHONSTARTUP|PERL5OPT|PERL5LIB|RUBYOPT|RUBYLIB|CLAUDECODE|LD_.*|DYLD_.*|GIT_.*)$/
+const flagLike = (v: string): boolean => v.trim().startsWith('-')
+
+/** A provider session id as the CLI reported it; anything else is never passed back as an argument. */
+export const safeSession = (id: string | undefined): string | undefined => id && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(id) ? id : undefined
+
+/** The Claude settings every external Claude run gets: Bash in the OS sandbox, so an allowed command
+ *  (`npm test`) cannot write outside the worktree through a script the agent edited. */
+export const CLAUDE_SANDBOX = JSON.stringify({ sandbox: { enabled: true, autoAllowBashIfSandboxed: false } })
 
 export function externalConfig(raw: unknown): ExternalConfig {
   const o: unknown = typeof raw === 'string' ? JSON.parse(raw) : raw ?? {}
@@ -20,25 +32,47 @@ export function externalConfig(raw: unknown): ExternalConfig {
   if (!obj(entries)) throw Error('externalAgents.agents must be an object')
   for (const [name, v] of Object.entries(entries)) {
     if (!/^[a-z0-9][a-z0-9._-]{0,39}$/.test(name) || !obj(v) || !['codex', 'agy', 'claude'].includes(text(v['cli']))) throw Error(`invalid external agent "${name}"`)
-    if (v['model'] !== undefined && !text(v['model']).trim()) throw Error(`${name}.model must be a nonempty string`)
+    if (v['model'] !== undefined && (!text(v['model']).trim() || flagLike(text(v['model'])))) throw Error(`${name}.model must be a nonempty name, not a flag`)
     if (v['level'] !== undefined && v['level'] !== 'safe' && v['level'] !== 'auto') throw Error(`${name}.level must be safe or auto`)
     if (v['env'] !== undefined && (!obj(v['env']) || Object.values(v['env']).some(x => typeof x !== 'string'))) throw Error(`${name}.env must map names to strings`)
-    if (v['allow'] !== undefined && (!Array.isArray(v['allow']) || v['allow'].some(x => !text(x).trim()))) throw Error(`${name}.allow must be a list of tool patterns`)
+    for (const key of obj(v['env']) ? Object.keys(v['env']) : []) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || UNSAFE_ENV.test(key.toUpperCase())) throw Error(`${name}.env cannot set ${key}: it would let the CLI load other code`)
+    }
+    if (v['allow'] !== undefined && (!Array.isArray(v['allow']) || v['allow'].some(x => !text(x).trim() || flagLike(text(x))))) throw Error(`${name}.allow must be a list of tool patterns, not flags`)
+    if (v['label'] !== undefined && (!text(v['label']).trim() || text(v['label']).length > 40)) throw Error(`${name}.label must be 1 to 40 characters`)
     agents[name] = { cli: v['cli'] as ExternalCli, ...(v['model'] ? { model: text(v['model']) } : {}),
       ...(v['env'] ? { env: { ...v['env'] as Record<string, string> } } : {}),
-      ...(v['allow'] ? { allow: v['allow'] as string[] } : {}), ...(v['level'] ? { level: v['level'] as 'safe' | 'auto' } : {}) }
+      ...(v['allow'] ? { allow: v['allow'] as string[] } : {}), ...(v['level'] ? { level: v['level'] as 'safe' | 'auto' } : {}),
+      ...(v['label'] ? { label: text(v['label']).trim() } : {}) }
   }
   return { maxConcurrent, maxMinutes, agents }
 }
 
-export function externalArgv(cfg: ExternalAgent, prompt: string, cwd: string, mode: 'edit' | 'read', session?: string): string[] {
+const PRODUCT: Record<ExternalCli, string> = { codex: 'Codex', agy: 'Antigravity', claude: 'Claude' }
+
+/** What the panel calls an agent: its label, else the product, with the profile name when it says more. */
+export const externalLabel = (name: string, cfg: ExternalAgent): string => {
+  if (cfg.label) return cfg.label
+  const product = PRODUCT[cfg.cli]
+  return name === cfg.cli || name === product.toLowerCase() ? product : `${product} · ${name}`
+}
+
+/** What the task adds for this CLI: Antigravity safe has no terminal, and gives up unless told so. */
+export const externalTaskNote = (cfg: ExternalAgent, mode: 'edit' | 'read'): string =>
+  cfg.cli === 'agy' && mode === 'edit'
+    ? ' You have no terminal: every shell command is denied, so do not try any. Use only your file tools (view_file, replace_file_content, write_to_file).'
+    : ''
+
+export function externalArgv(cfg: ExternalAgent, prompt: string, cwd: string, mode: 'edit' | 'read', reported?: string): string[] {
   if (cfg.cli === 'agy' && cfg.level === 'auto') throw Error(AGY_AUTO_ERROR)
+  const session = safeSession(reported)
   const model = cfg.model ? ['--model', cfg.model] : []
   if (cfg.cli === 'codex') return ['codex', 'exec', '--json', '--sandbox', mode === 'edit' ? 'workspace-write' : 'read-only',
     '--skip-git-repo-check', '-c', 'sandbox_workspace_write.exclude_slash_tmp=true', '-c', 'sandbox_workspace_write.exclude_tmpdir_env_var=false',
     '-C', cwd, ...model, ...(session ? ['resume', session, prompt] : [prompt])]
   if (cfg.cli === 'agy') return ['agy', '-p', prompt, '--output-format', 'stream-json', '--mode', mode === 'read' ? 'plan' : 'accept-edits', ...model, ...(session ? ['--conversation', session] : [])]
   return ['claude', '-p', prompt, '--output-format', 'stream-json', '--verbose', '--permission-mode', mode === 'read' ? 'plan' : 'acceptEdits', ...model,
+    '--settings', CLAUDE_SANDBOX,
     ...(session ? ['--resume', session] : []), '--allowedTools', 'Read', 'Glob', 'Grep', 'TaskCreate', 'TaskUpdate', ...(mode === 'edit' ? ['Edit', 'Write', ...(cfg.allow ?? [])] : [])]
 }
 
