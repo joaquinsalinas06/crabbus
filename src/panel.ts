@@ -72,7 +72,7 @@ export const agentView = (s: BusState, a: AgentRec, idx: number, now: number, pa
     idx,
     name: shownName(a),
     color: costumeColor(pack, a.costume),
-    role: a.ext ? `${a.ext.cli} · ${a.ext.profile}` : a.type,
+    role: a.ext ? a.ext.label ?? `${a.ext.cli} · ${a.ext.profile}` : a.type,
     model: a.usedModel ?? a.model ?? 'model ?',
     st,
     tool,
@@ -562,7 +562,7 @@ export const wardrobeModel = (pack: Pack, s: BusState, now: number): WardrobeMod
   const wearing: WardrobeAgent[] = running.map(a => ({
     id: a.id,
     name: shownName(a),
-    role: a.ext ? `${a.ext.cli} · ${a.ext.profile}` : a.type,
+    role: a.ext ? a.ext.label ?? `${a.ext.cli} · ${a.ext.profile}` : a.type,
     costume: a.costume,
     costumeColor: costumeColor(pack, a.costume),
     by: a.by ?? 'rotation',

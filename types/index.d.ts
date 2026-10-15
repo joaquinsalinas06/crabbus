@@ -11,7 +11,7 @@ declare module 'claude-code' {
           string,
           {
             id: string
-            ext?: { cli: 'codex' | 'agy' | 'claude'; profile: string; session?: string; worktree?: string; branch?: string }
+            ext?: { cli: 'codex' | 'agy' | 'claude'; profile: string; label?: string; session?: string; worktree?: string; branch?: string }
             type: string
             description: string
             name?: string
