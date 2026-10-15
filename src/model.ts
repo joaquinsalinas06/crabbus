@@ -20,7 +20,7 @@ export type TestRun = { cmd: string; ok: boolean | null; at: number }
 
 export type AgentRec = {
   id: string
-  ext?: { cli: 'codex' | 'agy' | 'claude'; profile: string; session?: string; worktree?: string; branch?: string }
+  ext?: { cli: 'codex' | 'agy' | 'claude'; profile: string; label?: string; session?: string; worktree?: string; branch?: string }
   type: string
   description: string
   name?: string
@@ -496,7 +496,7 @@ export const agentReport = (a: AgentRec, s: BusState, now: number): string => {
   lines.push(
     `  OBSERVED  last tool: ${a.lastTool ? `${a.lastTool}${a.lastToolInput ? ` ${a.lastToolInput}` : ''} (${ago(now - (a.lastToolAt ?? now))} ago)` : 'none yet'}; ${a.toolCount} tool call(s) (bus_step not counted); last activity ${ago(now - a.lastEventAt)} ago; shown as "${a.anim}"`,
   )
-  if (a.ext) lines.push(`  EXTERNAL  ${a.ext.cli} profile ${a.ext.profile}; session ${a.ext.session ?? 'not reported'}; ${a.ext.branch ?? 'read mode'}${a.ext.worktree ? `; worktree ${a.ext.worktree}` : ''}; subscription tokens, no dollar estimate`)
+  if (a.ext) lines.push(`  EXTERNAL  ${a.ext.label ?? a.ext.cli} (${a.ext.cli}, profile ${a.ext.profile}); session ${a.ext.session ?? 'not reported'}; ${a.ext.branch ?? 'read mode'}${a.ext.worktree ? `; worktree ${a.ext.worktree}` : ''}; subscription tokens, no dollar estimate`)
   if (a.filesModified.length > 0) lines.push(`            files modified (successful Edit/Write): ${a.filesModified.slice(-6).join(', ')}${a.filesModified.length > 6 ? ` (+${a.filesModified.length - 6})` : ''}`)
   if (a.tests.length > 0) lines.push(`            test commands: ${a.tests.slice(-3).map(t => `${t.ok ? 'passed' : 'FAILED'} \`${t.cmd}\``).join('; ')}`)
   if (a.lastError) lines.push(`            last tool error: ${a.lastError}`)
@@ -529,7 +529,7 @@ const declaredAtOr = (a: AgentRec, now: number): number => a.declaredAt ?? now
 
 export const statusReport = (s: BusState, now: number, filter?: string): string => {
   const all = Object.values(s.agents).sort((x, y) => x.startedAt - y.startedAt)
-  const list = filter ? all.filter(a => a.id === filter || a.name === filter || a.description.toLowerCase().includes(filter.toLowerCase())) : all
+  const list = filter ? all.filter(a => a.id === filter || (filter.length >= 4 && a.id.startsWith(filter)) || a.name === filter || a.description.toLowerCase().includes(filter.toLowerCase())) : all
   if (list.length === 0) return filter ? `No agent matches "${filter}". Known: ${all.map(a => a.id).join(', ') || 'none'}` : 'No subagents seen in this session yet.'
   const running = list.filter(a => a.status === 'running').length
   const head = `CrabBus: ${list.length} agent(s), ${running} running, ${list.length - running} finished. Layers: OBSERVED = hooks; DECLARED = the agent's own bus_step reports; VERIFIED = declared stages with attached evidence.`
