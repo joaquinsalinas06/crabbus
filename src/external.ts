@@ -9,10 +9,15 @@ const obj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' 
 const text = (v: unknown): string => typeof v === 'string' ? v : ''
 const count = (v: unknown): number => typeof v === 'number' && Number.isFinite(v) ? Math.max(0, v) : 0
 
-// Variables that make a child load or run other code, or change where its sandbox points: never
-// taken from the configuration, which a repository's settings could otherwise supply.
-const UNSAFE_ENV = /^(PATH|NODE_OPTIONS|NODE_PATH|BASH_ENV|ENV|SHELL|HOME|PYTHONPATH|PYTHONSTARTUP|PERL5OPT|PERL5LIB|RUBYOPT|RUBYLIB|CLAUDECODE|LD_.*|DYLD_.*|GIT_.*)$/
+// The only variables a configuration may set: where each CLI keeps its account. A denylist always
+// misses a loader variable, and plugin options may come from settings a repository supplies.
+export const ALLOWED_ENV: readonly string[] = ['CLAUDE_CONFIG_DIR', 'CODEX_HOME']
 const flagLike = (v: string): boolean => v.trim().startsWith('-')
+// What a Claude profile may be allowed on top of its defaults: file tools, and Bash for one named
+// command (`Bash(npm test:*)`), never Bash at large or a shell expression.
+const ALLOWED_TOOLS = ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'NotebookEdit', 'TaskCreate', 'TaskUpdate']
+export const safeAllow = (v: string): boolean =>
+  ALLOWED_TOOLS.includes(v) || /^Bash\([A-Za-z0-9][A-Za-z0-9._\/ -]{0,79}:\*\)$/.test(v)
 
 /** A provider session id as the CLI reported it; anything else is never passed back as an argument. */
 export const safeSession = (id: string | undefined): string | undefined => id && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(id) ? id : undefined
@@ -36,9 +41,9 @@ export function externalConfig(raw: unknown): ExternalConfig {
     if (v['level'] !== undefined && v['level'] !== 'safe' && v['level'] !== 'auto') throw Error(`${name}.level must be safe or auto`)
     if (v['env'] !== undefined && (!obj(v['env']) || Object.values(v['env']).some(x => typeof x !== 'string'))) throw Error(`${name}.env must map names to strings`)
     for (const key of obj(v['env']) ? Object.keys(v['env']) : []) {
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || UNSAFE_ENV.test(key.toUpperCase())) throw Error(`${name}.env cannot set ${key}: it would let the CLI load other code`)
+      if (!ALLOWED_ENV.includes(key)) throw Error(`${name}.env can only set ${ALLOWED_ENV.join(' or ')}, not ${key}`)
     }
-    if (v['allow'] !== undefined && (!Array.isArray(v['allow']) || v['allow'].some(x => !text(x).trim() || flagLike(text(x))))) throw Error(`${name}.allow must be a list of tool patterns, not flags`)
+    if (v['allow'] !== undefined && (!Array.isArray(v['allow']) || v['allow'].some(x => !safeAllow(text(x))))) throw Error(`${name}.allow takes file tools and Bash(<command>:*) entries only`)
     if (v['label'] !== undefined && (!text(v['label']).trim() || text(v['label']).length > 40)) throw Error(`${name}.label must be 1 to 40 characters`)
     agents[name] = { cli: v['cli'] as ExternalCli, ...(v['model'] ? { model: text(v['model']) } : {}),
       ...(v['env'] ? { env: { ...v['env'] as Record<string, string> } } : {}),
