@@ -4,7 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "typecheck": "tsc --noEmit",
+    "check:english": "node tools/check-english.ts",
     "spec": "node --test spec/*.spec.ts",
+    "test": "npm run typecheck && npm run check:english && npm run spec",
     "preview": "node tools/preview.ts evidence/art/sheet-dark.png 4"
   },
   "devDependencies": {
