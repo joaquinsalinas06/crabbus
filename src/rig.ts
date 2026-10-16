@@ -84,22 +84,6 @@ export const ANCHOR_HELP: Record<Anchor, string> = {
   ground: 'follows the legs: only rises when jumping',
 }
 
-/** How far an anchor has moved from the resting crab, in this pose. */
-export const anchorOffset = (a: Anchor, p: Pose): { x: number; y: number } => {
-  switch (a) {
-    case 'card':
-      return { x: 0, y: 0 }
-    case 'ground':
-      return { x: p.dx, y: -p.lift }
-    case 'claw.left':
-      return { x: p.dx, y: p.bob - p.lift - 2 * p.armL }
-    case 'claw.right':
-      return { x: p.dx, y: p.bob - p.lift - 2 * p.armR }
-    default:
-      return { x: p.dx, y: p.bob - p.lift }
-  }
-}
-
 // ---- slots and layer order
 
 export const SLOTS = ['behind', 'torso', 'neck', 'face.mouth', 'face.eyes', 'head', 'hand.left', 'hand.right', 'trim'] as const
@@ -126,64 +110,85 @@ export const BODY_LAYER = 1
 export const CLAY = 0xd97757
 const INK = 0x1f1e1d
 
-const BODY = [
-  '....HHHHHHHHHH....',
-  '...HBBBBBBBBBBS...',
-  '...BBBBBBBBBBBS...',
-  '...BBBBBBBBBBBS...',
-  '...BBBBBBBBBBBS...',
-  '....SSSSSSSSSS....',
-]
-
-/** Card row of the top of the head when the crab rests. */
-export const HEAD_TOP = 6
-
-const bodyPal = (body: number): Record<string, number> => ({ H: mix(body, 0xffffff, 0.22), B: body, S: mix(body, 0x000000, 0.28) })
-
-/** Draws the crab at card origin (ox, oy). Body pixels are tagged `TAG.body`, eye pixels `TAG.eye`. */
-export const drawCrab = (put: Put, ox: number, oy: number, body: number, p: Pose, eyeColor = INK): void => {
-  const by = oy + HEAD_TOP + p.bob - p.lift
-  const bx = ox + p.dx
-  const pal = bodyPal(body)
-  // legs stay on the ground unless jumping
-  const ly = oy + 12 - p.lift
-  const leg = pal['S'] as number
-  for (const [x, up] of [[4, p.legs === 0], [6, p.legs === 1], [11, p.legs === 0], [13, p.legs === 1]] as const) {
-    // a kicking leg stretches sideways from the body instead of standing
-    if ((p.kick === 'left' && x === 4) || (p.kick === 'right' && x === 13)) {
-      const d = x === 4 ? -1 : 1
-      put(bx + x, ly, leg, TAG.body); put(bx + x + d, ly, leg, TAG.body); put(bx + x + 2 * d, ly - 1, leg, TAG.body)
-      continue
-    }
-    put(bx + x, ly, leg, TAG.body)
-    if (!up) put(bx + x, ly + 1, leg, TAG.body)
-  }
-  stampWith(put, bx, by, BODY, pal, TAG.body)
-  // claws: 2x2, raised two pixels when the arm is up
-  const claw = pal['B'] as number
-  const clawHi = pal['H'] as number
-  for (const [x, raised] of [[1, p.armL], [15, p.armR]] as const) {
-    const y = by + 2 - raised * 2
-    put(bx + x, y, clawHi, TAG.body); put(bx + x + 1, y, clawHi, TAG.body)
-    put(bx + x, y + 1, claw, TAG.body); put(bx + x + 1, y + 1, claw, TAG.body)
-  }
-  // eyes: one pixel wide, two tall; none from behind
-  if (!p.facingAway) for (const [x, y, col] of eyePixels(p, ox, oy, body, eyeColor)) put(x, y, col, TAG.eye)
+export type BodyMotion = 'body' | 'ground' | 'claw.left' | 'claw.right' | 'card'
+export type BodyPoint = { x: number; y: number }
+export type BodyLayer = BodyPoint & {
+  rows: string[]
+  motion: BodyMotion
+  when?: { legs?: 0 | 1; kick?: ('left' | 'right' | 'none')[] }
+  /** Other drawings of this layer by name (an ear up, a nose mid-sniff), picked by `anim`. */
+  frames?: Record<string, string[]>
+  /** Per-action tracks (pack.ts parses and evaluates them), like a piece layer's `anim`. */
+  anim?: unknown
+}
+/** What a layer's animation says at this tick: another frame, a shift, or hidden. */
+export type BodyStep = { d?: string; x?: number; y?: number; hidden?: boolean }
+export type BodyDef = {
+  id: string
+  name: string
+  layers: BodyLayer[]
+  anchors: Record<Anchor, BodyPoint & { motion: BodyMotion }>
+  armLift: { left: number; right: number }
+  eyes: { points: BodyPoint[]; height: number; blink: number; look: number; color?: number }
+  /** The body color a costume gets when it names none (the crab's is CLAY). */
+  color?: number
+  /** Fixed colors for the body's own row characters (a snout, ears, a belly), beside the H/B/S roles. */
+  palette?: Record<string, number>
+  origin: string
+  source: unknown
 }
 
-/** The eye pixels the crab draws in this pose (the fit check keeps pieces off them). */
-export const eyePixels = (p: Pose, ox = 0, oy = 0, body = CLAY, eyeColor = INK): [number, number, number][] => {
-  const by = oy + HEAD_TOP + p.bob - p.lift
-  const bx = ox + p.dx
-  const ex = p.eyes === 'left' ? -1 : p.eyes === 'right' ? 1 : 0
-  const ey = p.eyes === 'up' ? -1 : 0
-  const col = p.eyes === 'red' ? 0xe5484d : eyeColor
-  const out: [number, number, number][] = []
-  for (const x of [5, 12]) {
-    if (p.eyes === 'blink' || p.eyes === 'shut') out.push([bx + x + ex, by + 3, p.eyes === 'shut' ? mix(body, INK, 0.7) : eyeColor])
-    else out.push([bx + x + ex, by + 2 + ey, col], [bx + x + ex, by + 3 + ey, col])
+/** Reference coordinates for pieces authored on the resting crab. */
+export const CRAB_ANCHORS: Record<Anchor, BodyPoint> = {
+  card: { x: 0, y: 0 }, body: { x: 9, y: 8 }, head: { x: 9, y: 6 },
+  face: { x: 9, y: 9 }, 'claw.left': { x: 2, y: 9 },
+  'claw.right': { x: 16, y: 9 }, ground: { x: 9, y: 13 },
+}
+
+const motionOffset = (body: BodyDef, motion: BodyMotion, p: Pose): BodyPoint => {
+  if (motion === 'card') return { x: 0, y: 0 }
+  return { x: p.dx, y: -p.lift + (motion === 'ground' ? 0 : p.bob) +
+    (motion === 'claw.left' ? body.armLift.left * p.armL : motion === 'claw.right' ? body.armLift.right * p.armR : 0) }
+}
+
+export const bodyAnchorOffset = (body: BodyDef, anchor: Anchor, p: Pose): BodyPoint => {
+  const a = body.anchors[anchor]
+  const off = motionOffset(body, a.motion, p)
+  const ref = CRAB_ANCHORS[anchor]
+  return anchor === 'card' ? { x: 0, y: 0 } : { x: a.x - ref.x + off.x, y: a.y - ref.y + off.y }
+}
+
+/** How far an anchor has moved from its own resting point: for pieces drawn on that body itself. */
+export const bodyAnchorMotion = (body: BodyDef, anchor: Anchor, p: Pose): BodyPoint =>
+  anchor === 'card' ? { x: 0, y: 0 } : motionOffset(body, body.anchors[anchor].motion, p)
+
+/** Where a body's anchor rests relative to the crab's: moves what was drawn for the crab onto this body. */
+export const anchorShift = (body: BodyDef, anchor: Anchor): BodyPoint =>
+  anchor === 'card' ? { x: 0, y: 0 } : { x: body.anchors[anchor].x - CRAB_ANCHORS[anchor].x, y: body.anchors[anchor].y - CRAB_ANCHORS[anchor].y }
+
+const bodyPal = (color: number): Record<string, number> => ({ H: mix(color, 0xffffff, 0.22), B: color, S: mix(color, 0x000000, 0.28) })
+
+export const drawBody = (put: Put, ox: number, oy: number, color: number, p: Pose, body: BodyDef, eyeColor = body.eyes.color ?? INK, stepOf: (layer: BodyLayer) => BodyStep = () => ({})): void => {
+  const pal = { ...bodyPal(color), ...body.palette }
+  for (const layer of body.layers) {
+    if (layer.when?.legs !== undefined && layer.when.legs !== p.legs) continue
+    if (layer.when?.kick && !layer.when.kick.includes(p.kick ?? 'none')) continue
+    const off = motionOffset(body, layer.motion, p)
+    const s = stepOf(layer)
+    if (s.hidden) continue
+    const rows = (s.d ? layer.frames?.[s.d] : undefined) ?? layer.rows
+    stampWith(put, ox + layer.x + off.x + (s.x ?? 0), oy + layer.y + off.y + (s.y ?? 0), rows, pal, TAG.body)
   }
-  return out
+  if (p.facingAway) return
+  const off = motionOffset(body, 'body', p)
+  const ex = p.eyes === 'left' ? -body.eyes.look : p.eyes === 'right' ? body.eyes.look : 0
+  const ey = p.eyes === 'up' ? -body.eyes.look : 0
+  for (const eye of body.eyes.points) {
+    const x = ox + eye.x + off.x + ex
+    const y = oy + eye.y + off.y
+    if (p.eyes === 'blink' || p.eyes === 'shut') put(x, y + body.eyes.blink, p.eyes === 'shut' ? mix(color, INK, 0.7) : eyeColor, TAG.eye)
+    else for (let i = 0; i < body.eyes.height; i++) put(x, y + ey + i, p.eyes === 'red' ? 0xe5484d : eyeColor, TAG.eye)
+  }
 }
 
 export { CARD_H, CARD_W }

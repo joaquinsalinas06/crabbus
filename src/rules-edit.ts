@@ -165,7 +165,7 @@ export const withRules = (current: Pack, files: readonly DesignFile[], touched: 
   return { ...p, problems }
 }
 
-export type Plan = { ok: true; file: string; text: string; files: DesignFile[]; pack: Pack; summary: string } | { ok: false; error: string }
+export type Plan = { ok: true; unchanged?: boolean; file: string; text: string; files: DesignFile[]; pack: Pack; summary: string } | { ok: false; error: string }
 
 /**
  * Plans an edit over the design files now loaded: the new text of the file it changes and the pack the

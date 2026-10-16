@@ -1,6 +1,5 @@
 .DS_Store
 node_modules/
-.claude-plugin/types/
 # knowledge graph: publish the graph and its report; caches, costs, backups, the viewer
 # (rebuilt with `graphify export html`) and the local interpreter path stay out
 graphify-out/*

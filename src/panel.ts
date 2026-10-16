@@ -7,7 +7,7 @@
 import { masterCostume } from './art.ts'
 import { BUILTIN } from './builtin.ts'
 import { uiStatus, type Activity, type AgentRec, type BusState, type Permission } from './model.ts'
-import { BUILTIN_ORIGIN, costumeColor, type Pack, type Problem, type Rule } from './pack.ts'
+import { BUILTIN_ORIGIN, costumeColor, effectiveBodyId, type Pack, type Problem, type Rule } from './pack.ts'
 import { NO_USAGE, costOf, costParts, promptTokens, windowOf, type Usage } from './price.ts'
 import { paneList, shownName } from './scene.ts'
 import { C, ST, agoTxt, clock, ctxColor, dur, fc, fk, fit, limitName, prog, resetClock, spark, toolColor, untilTxt, type UiStatus } from './theme.ts'
@@ -476,6 +476,9 @@ export type WardrobeRuleView = {
 }
 
 export type WardrobeCostumeView = {
+  bodyId: string
+  bodySource: string
+  explicitBody?: string
   id: string
   name: string
   color: number
@@ -589,6 +592,9 @@ export const wardrobeModel = (pack: Pack, s: BusState, now: number): WardrobeMod
 
   const activeSet = new Set(pack.active)
   const rotation: WardrobeCostumeView[] = Object.values(pack.costumes).map(c => ({
+    bodyId: effectiveBodyId(pack, c.id),
+    bodySource: c.bodyId ? 'costume' : 'crab (no body id)',
+    ...(c.bodyId ? { explicitBody: c.bodyId } : {}),
     id: c.id,
     name: c.name,
     color: costumeColor(pack, c.id),
@@ -654,8 +660,12 @@ export const tellPrompt = (request: string, dir: string, picked: string | undefi
   [
     `From the CrabBus wardrobe panel, the person asks: "${request.trim().slice(0, TELL_MAX)}"`,
     '',
-    'Do it with the crabbus:design skill: it covers new costumes and pieces, new actions and animations, and who ' +
-      'wears what (the rules, the rotation, the master).',
+    'Do it with the crabbus:design skill: it covers new costumes and pieces, new actions and animations, who ' +
+      'wears what (the rules, the rotation, the master), and new creatures (bodies).',
+    '- A request is a costume (skin) on a body that already exists, the crab unless they name another. Make a new ' +
+      'body only when they ask for one in so many words ("a new creature", "a body of X", "not a costume"); then ' +
+      'follow the skill: look at references of the animal, draw it from scratch in its natural view, and give it ' +
+      'at least one skin of its own.',
     `- Save design files in ${dir}/. Rules go in the first file there with "type": "rules" (create rules.json if ` +
       'there is none). Change only what they asked.',
     '- If they name something you do not know well (a meme, a character, a trend, something recent), search the web ' +

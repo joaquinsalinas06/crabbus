@@ -3,6 +3,8 @@
 // Observe-only on every path it shares with Claude Code: it never denies, rewrites or answers another
 // tool's call, never changes a message, and any failure of its own falls through to `next(e)`.
 // It also adds one thing the model reads: BRIEF, appended to each spawned subagent's prompt (see README).
+import { planBodyEdit, type BodyOp } from '../src/body-edit.ts'
+import { bodyCompatibility } from '../src/fit.ts'
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, FsEntry, Register, RenderChildren, RenderElement, RenderInput, RenderNode, HookStream, ProcessSpawnChunk, ProcessSpawnResult } from 'claude-code'
 
@@ -263,6 +265,25 @@ async function designEntries($: EngineInterface, dir: string): Promise<FsEntry[]
 /** What changes when any design file does: its name, size and time. */
 const designSig = (entries: readonly FsEntry[]): string => entries.map(x => `${x.name}:${x.size}:${x.mtimeMs}`).sort().join('|')
 
+// Serializing body saves makes each choice validate against the last file version read.
+let bodySave: Promise<void> = Promise.resolve()
+function editBody($: EngineInterface, op: BodyOp): Promise<void> {
+  bodySave = bodySave.then(async () => {
+    await refreshDesigns($, true)
+    const plan = planBodyEdit(designFiles, op, pack)
+    if (!plan.ok) { void $.ui.toast(plan.error); return }
+    if (plan.unchanged) return
+    const dir = await designsDir($)
+    await $.fs.write(`${dir}/${plan.file}`, plan.text)
+    designFiles = plan.files
+    pack = plan.pack
+    $.ui.invalidate('ui.render')
+    await refreshDesigns($, true)
+    void $.ui.toast(plan.summary)
+  }).catch((e: unknown) => { void $.ui.toast(`Not changed: ${String(e)}`) })
+  return bodySave
+}
+
 async function refreshDesigns($: EngineInterface, force = false): Promise<boolean> {
   const dir = await designsDir($)
   const entries = await designEntries($, dir)
@@ -277,6 +298,9 @@ async function refreshDesigns($: EngineInterface, force = false): Promise<boolea
     if (x.size > MAX_DESIGN_BYTES) tooBig.push(x.name)
     else files.push({ file: x.name, text: String(await $.fs.read(`${dir}/${x.name}`)) })
   }
+  // Forced reads still catch external edits; identical content keeps its already validated geometry.
+  if (!first && tooBig.length === 0 && !pack.problems.some(p => p.msg === TEXT.fileTooLarge) && files.length === designFiles.length &&
+    files.every((f, i) => f.file === designFiles[i]?.file && f.text === designFiles[i]?.text)) return false
   designFiles = files
   const next = files.length === 0 ? BUILTIN : loadPack(files, BUILTIN)
   pack = tooBig.length === 0 ? next : { ...next, problems: [...next.problems, ...tooBig.map(file => ({ file, msg: TEXT.fileTooLarge, fatal: true }))] }
@@ -1201,6 +1225,15 @@ export const register: Register = (on, options) => {
       const [picked, crit] = [await read($, wdSel), await read($, wdCrit)]
       const chosen = m.rotation.find(c => c.id === picked) ?? m.rotation.find(c => c.isMaster) ?? m.rotation[0]
       const edit = (op: RuleOp) => () => void editRules($, op)
+      const bodyChoice = (key: string, label: string, selected: boolean, problems: readonly { msg: string }[], op: BodyOp) => selected ? <Text key={key} color={hex(C.dim)}>{`● ${label}`}</Text> : problems.length
+        ? <Text key={key} color={hex(C.faint)} wrap="wrap">{`${label} — unavailable: ${problems[0]?.msg}`}</Text>
+        : <Button key={key} plain={desktop ? undefined : true} onPress={() => editBody($, op)}>{`${selected ? '● ' : '○ '}${label}`}</Button>
+      // each costume is one creature: the body it names, else the crab. No crew-wide default.
+      const bodyChoices = (costume: WardrobeCostumeView) => <Box flexDirection="column" marginTop={1}>
+        <Text bold color={hex(C.text)}>{`Body: ${pack.bodies[costume.bodyId]?.name ?? costume.bodyId}`}</Text>
+        {Object.values(pack.bodies).map(b => bodyChoice(`wd-body-${costume.id}-${b.id}`, b.name, costume.bodyId === b.id,
+          bodyCompatibility(pack, costume.id, b.id), { op: 'setBody', costume: costume.id, body: b.id }))}
+      </Box>
       const mine = m.rules.filter(r => r.editable)
       const builtin = m.rules.filter(r => !r.editable)
       // full-size crabs, two rows to a page, as many to a row as fit between the side arrows
@@ -1409,6 +1442,7 @@ export const register: Register = (on, options) => {
             </Box>
           )}
 
+
           {chosen && (() => {
             // the picked costume's card: what it is, its two switches, every rule that dresses an agent in it, and a new one
             const own = m.rules.filter(r => r.costume === chosen.id)
@@ -1417,6 +1451,7 @@ export const register: Register = (on, options) => {
             return (
               <Box key="wd-chosen" flexDirection="column" borderStyle="round" borderColor={hex(chosen.color)} backgroundColor={hex(CARD_BG)} paddingX={1} marginTop={1}>
                 <Text bold wrap="truncate-end" color={hex(chosen.color)}>{chosen.id}</Text>
+                {bodyChoices(chosen)}
                 <Text wrap="truncate-end" color={hex(C.dim)}>{TEXT.costumeFacts(chosen.name, chosen.piecesCount, chosen.rulesCount, chosen.wornBy)}</Text>
                 <Box flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1}>
                   {pill(`wd-rot-${chosen.id}`, chosen.active, chosen.active ? TEXT.rotationOn : TEXT.rotationOff, C.mint, edit({ op: 'toggleActive', costume: chosen.id }))}

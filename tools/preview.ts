@@ -8,7 +8,7 @@
 import { deflateSync } from 'node:zlib'
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { BUILTIN } from '../src/builtin.ts'
-import { loadPack } from '../src/fit.ts'
+import { bodyCompatibility, loadPack } from '../src/fit.ts'
 import { BUILTIN_ORIGIN, type DesignFile, type Pack } from '../src/pack.ts'
 import { CARD_H, canvas, drawAgent, drawMaster, get, type Canvas, type Costume, type Mood } from '../src/art.ts'
 import { agentCard, compose, layout, miniCard } from '../src/scene.ts'
@@ -108,9 +108,11 @@ function design(): void {
     const list = statSync(p).isDirectory() ? readdirSync(p).filter(f => f.endsWith('.json')).map(f => `${p}/${f}`) : [p]
     for (const f of list) files.push({ file: f.split('/').pop() as string, text: readFileSync(f, 'utf8') })
   }
+  const selectedBody = arg('--body')
+  const customBody = files.flatMap(f => { try { const o = JSON.parse(f.text ?? '{}'); return o.type === 'body' ? [o.id] : [] } catch { return [] } })[0]
   const pack: Pack = loadPack(files, BUILTIN)
   const mine = new Set(files.map(f => f.file))
-  const problems = pack.problems.filter(x => mine.has(x.file) || x.file === 'rules')
+  const problems = pack.problems.filter(x => mine.has(x.file) || x.file === 'rules' || x.fatal)
   for (const x of problems) console.log(`${x.fatal ? 'PROBLEM' : 'warning'} ${x.file}${x.id ? ` (${x.id})` : ''}: ${x.msg}`)
   // the costume to show: the one asked for, else the first one the files define, else the files' pieces on a bare crab
   const own = Object.values(pack.costumes).filter(d => mine.has(d.origin))
@@ -118,7 +120,17 @@ function design(): void {
   if (!costume) {
     const pieces = Object.values(pack.pieces).filter(p => mine.has(p.origin)).map(p => p.id)
     costume = '(preview)'
-    pack.costumes[costume] = { id: costume, name: 'preview', color: 0x888780, body: 0xd97757, pieces, origin: '', source: null }
+    // a body file alone: show that body bare (or wearing the files' own pieces)
+    pack.costumes[costume] = { id: costume, name: 'preview', color: 0x888780, body: 0xd97757, ...(customBody ? { bodyId: customBody } : {}), pieces, origin: '', source: null }
+  }
+  // --body tries the shown costume on another body, with the fit check that choice gets in the wardrobe
+  const tryOn = selectedBody ?? (costume === '(preview)' ? customBody : undefined)
+  if (tryOn && pack.costumes[costume]) {
+    if (!pack.bodies[tryOn]) { console.log(`PROBLEM: body "${tryOn}" does not exist`); process.exit(1) }
+    const found = bodyCompatibility(pack, costume, tryOn)
+    pack.costumes[costume] = { ...pack.costumes[costume]!, bodyId: tryOn }
+    for (const x of found) console.log(`PROBLEM ${x.file}${x.id ? ` (${x.id})` : ''}: ${x.msg}`)
+    if (found.length) process.exitCode = 1
   }
   if (!pack.costumes[costume]) {
     console.log(`PROBLEM: costume "${costume}" cannot be shown (see problems above)`)

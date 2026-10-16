@@ -36,6 +36,13 @@
 | Host-generated worktree summaries; external agents leave changes uncommitted | Giving agents writable access to shared Git metadata | Linked worktree metadata is outside the sandbox root. Host Git reports tracked and untracked changes without widening agent access. |
 | One process per external agent with FIFO continuations and bounded runtime | Parallel resumes of the same provider session | Keeps identity/context coherent and lets Stop or timeout discard pending messages deterministically. |
 | Batch completed external turns into one prompt.submit while the master is idle | One master turn per completion | Parallel agents do not spend an extra Claude turn each; dropped/failed submissions retain the batch. |
+| Body as data; crab kept pixel-identical | A renderer branch for each creature | One Pose interpreter draws editable body layers and anchors; existing golden fingerprints stay unchanged. |
+| Each costume names its body; none means crab. `rules.defaultBody` is not read (a warning says so) | A crew-wide default body (`rules.defaultBody`) | People mix species by skin: crabs, robots and capybaras in one crew. A global default replaced every skin at once and made each costume's look depend on another file. |
+| New creatures are drawn from scratch, with a body `color`, a fixed `palette` and pieces drawn for that body; the built-in capybara faces front, chibi style | Reshaping the crab grid ("a crab with ears") or a side view | Tried live 2026-10-14: the crab reshape read as a crab, and a side-view capybara read flat and lifeless next to a front-facing crew (one small eye, half the card). Front-facing, with a separate round head, two eyes that blink and look, a long muzzle and a pear body, it fills the card like the other costumes. Crab pieces still work where they fit, and held props follow the body's paw anchors. |
+| Tell CrabBus makes a skin unless a new body is asked for in so many words | Guessing a new species from "a capybara costume" | The person's crabs with capybara hats are skins; a new creature is a bigger change they must ask for. |
+| Built-in body choices save same-ID user costume overrides | Editing the installed built-in source | User changes persist without changing shared artwork or losing sibling bundle items. |
+| Body selectors fit-check before enabling and again before saving | Accepting a selection then silently hiding incompatible pieces | The visible body/costume/action/tick reason explains what must be repaired; cached results last only for the current pack revision. |
+
 
 
 ## Unverified assumptions (what breaks if wrong)

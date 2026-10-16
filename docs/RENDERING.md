@@ -12,7 +12,7 @@ at runtime. The terminal's cells-versus-Image decision is recorded in `DECISIONS
 | Records | `src/model.ts` | What hooks observed and what agents declared (`bus_step`), per agent. Nothing is drawn from anything else. |
 | Mood | `src/pack.ts` (`resolveAction`) | Each frame turns an agent's record into facts and picks the highest-priority action whose condition they meet; with nothing specific known, the crab walks. |
 | Plays | `src/director.ts` | One-shot actions (a spin, a kick-about) that start when a condition *becomes* true, and the passes between crabs (at most `MAX_PASSES`). |
-| Pose and body | `src/rig.ts` | The crab's body, its anchors (head, face, body, claw, ground, card) and the pose an action implies at tick `t`. |
+| Pose and body | `src/rig.ts` | The selected data-defined body's anchors (head, face, body, claw, ground, card) and the pose an action implies at tick `t`. |
 | Costume | `src/pack.ts`, `src/builtin.ts` | Costumes and actions are data: the built-in crew, plus the user's JSON designs checked by `src/fit.ts` before use. |
 | Card | `src/art.ts` | `drawAgent` / `drawMaster`: one crab in its costume, doing its mood, on an 18 x 14 pixel card. |
 | Scene | `src/scene.ts` | `layout` decides what fits (`none`, one text `line`, or the `stage`); `compose` draws the stage, envelopes in flight and question marks. Pure: callers pass `now` and the tick. |
@@ -178,3 +178,41 @@ Clawd frames from the Claude desktop app are Anthropic's artwork; CrabBus does n
 - `Image` mode (real pixels in Ghostty, kitty and iTerm2) has not been verified on screen; cells stay the
   renderer until it is. `toRgba` in `src/canvas.ts` already produces the pixels it would need.
 - A second skin pack from CC0 sprite sheets, checking each sheet's license first.
+
+
+## Bodies as Data
+
+Bodies compile alongside pieces, costumes and actions. `src/builtin.ts` supplies `crab`
+`robot` and `capybara` in the same editable format users export. `src/rig.ts` interprets their layers,
+limb states, eye coordinates and anchor motion using the unchanged Pose and 18 by 14 card.
+The crab extraction preserves every existing golden pixel fingerprint.
+
+A costume's `body` object keeps its color and eye color and optionally names an `id`.
+Resolution is costume `body.id`, else `crab`: there is no crew-wide default, so one crew
+mixes species by skin. Both transports, miniatures, the master, previews and fit use this
+resolution. A body may bring a base `color` (used when the costume names none) and a fixed
+`palette` for outline, nose, ears and legs. A piece that names a `body` is drawn in that
+body's coordinates and moves with its anchor only; a piece without one stays in resting-crab
+coordinates, translated by anchor rest differences before pose motion. A held action effect
+moves by the body's claw anchor minus the crab's, so props land on the capybara's paws.
+
+Wardrobe body changes run fit before enabling a choice and again before writing. Results
+are cached for a pack revision and invalidated by reload. A built-in costume change writes
+a same-ID user override; user bundle edits preserve sibling items. Saves refresh the source
+files first, serialize body writes and publish the refreshed pack only after a successful write.
+Body changes bypass the rules-only fast path because they change pixels. External edits
+between the final read and write are not protected by a filesystem compare-and-swap API.
+
+Use `/costume export robot` for a complete body schema. Exporting an outfit includes its
+effective body and pins that species in the exported costume.
+
+Returning a same-ID built-in override to inheritance removes the override definition if
+it otherwise matches the built-in. A standalone override file becomes an empty bundle,
+so it no longer shadows future built-in updates. Unrelated rejected design files do not
+block valid body changes; a failure specific to another body removes only that outfit.
+
+Forced design refreshes still read the files, but reuse a validated pack when every file's
+content and order match. A successful body save publishes its already validated candidate
+before that readback, avoiding a second identical fit pass. Shipped body/outfit pairs use
+their exhaustive spec results only while body, costume, piece and action references remain
+exactly the built-in ones; user changes invalidate that shortcut.
