@@ -44,6 +44,7 @@
 | Body selectors fit-check before enabling and again before saving | Accepting a selection then silently hiding incompatible pieces | The visible body/costume/action/tick reason explains what must be repaired; cached results last only for the current pack revision. |
 
 
+
 ## Unverified assumptions (what breaks if wrong)
 
 - `session.receive` fires for every SendMessage delivery to a subagent (verified once in a real run; if it does not, "delivered" stays unset and only the declared ack shows).
