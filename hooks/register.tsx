@@ -11,7 +11,7 @@ import type { EngineInterface, FsEntry, Register, RenderChildren, RenderElement,
 import { CARD_H, CARD_W, canvas, cellsOf, drawAgent } from '../src/art.ts'
 import type { Canvas } from '../src/canvas.ts'
 import { barSvg, sparkSvg, toSvg } from '../src/svg.ts'
-import { externalConfig, externalLabel, safeSession, externalTaskNote, externalUsageDelta, externalArgv, externalParser, externalLines, allowedRepo, AGY_AUTO_ERROR, type ExternalConfig, type ExternalAgent, type ExtEvent } from '../src/external.ts'
+import { externalConfig, externalLabel, safeSession, externalTaskNote, externalUsageDelta, externalArgv, externalParser, externalLines, allowedRepo, trustedRepos, TRUSTED_REPOS_FILE, AGY_AUTO_ERROR, type ExternalConfig, type ExternalAgent, type ExtEvent } from '../src/external.ts'
 import type { Usage } from '../src/price.ts'
 import { BUILTIN } from '../src/builtin.ts'
 import { MASTER, direct, emptyDirector, playOf, type Director } from '../src/director.ts'
@@ -540,7 +540,7 @@ function ensureClock($: EngineInterface, ms: number, still: boolean): void {
 
 const aliases = new Map<string, string>()
 const canonicalId = (id: string | undefined) => id ? aliases.get(id) ?? id : undefined
-let extConfig: ExternalConfig = { agents: {}, maxConcurrent: 3, maxMinutes: 30, repos: [] }
+let extConfig: ExternalConfig = { agents: {}, maxConcurrent: 3, maxMinutes: 30 }
 let externalError = ''
 let externalFrameMs = 167, externalStill = false
 const available = new Set<string>()
@@ -718,8 +718,15 @@ const delegate = async ($: EngineInterface, args: Record<string, unknown>): Prom
   const mode = args['mode'] === 'read' ? 'read' : 'edit'
   // another repository than the session's: an absolute path inside a git work tree, used from its top level
   const requested = args['cwd']
-  if (requested !== undefined && (typeof requested !== 'string' || !allowedRepo(requested, extConfig.repos)))
-    throw Error('cwd must be an absolute path inside a repository listed in externalAgents.repos')
+  let repos: string[] = []
+  if (requested !== undefined) {
+    const home = await $.env.get('HOME').catch(() => undefined)
+    if (!home) throw Error('HOME is required to read the trusted repositories')
+    const file = `${home}/${TRUSTED_REPOS_FILE}`
+    repos = await $.fs.exists(file) ? trustedRepos(String(await $.fs.read(file))) : []
+    if (typeof requested !== 'string' || !allowedRepo(requested, repos))
+      throw Error(`cwd must be an absolute path inside a repository listed in ~/${TRUSTED_REPOS_FILE}`)
+  }
   pendingStarts++
   let reserved = true
   try {
@@ -730,11 +737,11 @@ const delegate = async ($: EngineInterface, args: Record<string, unknown>): Prom
     const real = await $.process.run(['realpath', requested], { timeoutMs: 5000 })
     const resolved = real.exitCode === 0 ? real.stdout.trim() : ''
     if (!resolved) throw Error(`cwd does not exist: ${requested}`)
-    if (!allowedRepo(resolved, extConfig.repos)) throw Error(`cwd resolves to ${resolved}, outside externalAgents.repos`)
+    if (!allowedRepo(resolved, repos)) throw Error(`cwd resolves to ${resolved}, outside ~/${TRUSTED_REPOS_FILE}`)
     if (await $.env.get('HOME').catch(() => undefined) === resolved) throw Error('cwd cannot be the home directory')
     cwd = (await hostGit($, resolved, ['rev-parse', '--show-toplevel']).catch(() => { throw Error(`cwd is not inside a git work tree: ${requested}`) })).trim()
     // a nested repository may have its top level outside the list
-    if (!allowedRepo(cwd, extConfig.repos)) throw Error(`cwd resolves to ${cwd}, outside externalAgents.repos`)
+    if (!allowedRepo(cwd, repos)) throw Error(`cwd resolves to ${cwd}, outside ~/${TRUSTED_REPOS_FILE}`)
   }
   if (mode === 'edit') {
     cwd = (await hostGit($, cwd, ['rev-parse', '--show-toplevel'])).trim()

@@ -8,14 +8,16 @@ const call = ($: Engine, args: Record<string, unknown>) => $.tool.call({ tool: '
 const status = async ($: Engine) => String((await $.tool.call({ tool: 'mcp__crabbus__bus_status', tool_use_id: 'status' })).result)
 const result = (r: unknown) => String((r as { result?: unknown }).result)
 
-function host(on: On, controls: { silent?: boolean; noGit?: boolean; failNotice?: boolean; hold?: boolean; noSession?: boolean; cumulative?: boolean; prepare?: boolean } = {}) {
+function host(on: On, controls: { silent?: boolean; noGit?: boolean; failNotice?: boolean; hold?: boolean; noSession?: boolean; cumulative?: boolean; prepare?: boolean; trusted?: string } = {}) {
   const clock = mock.clock(on)
   const prompts: string[] = [], commands: string[][] = [], launches: string[][] = [], waiting: (() => void)[] = [], preparations: (() => void)[] = []
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('session.cwd', () => ({ value: '/repo' }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('tool.register', ($, e) => ({ value: { tool: `mcp__crabbus__${e.name}` } }))
-  on('fs.exists', () => ({ value: false }))
+  // the trusted repositories file lives in HOME; the session repository needs no entry
+  on('fs.exists', ($, e) => ({ value: controls.trusted !== undefined && String((e as { path?: unknown }).path).endsWith('/.crabbus/trusted-repos.json') }))
+  on('fs.read', () => ({ value: controls.trusted ?? '' }))
   on('fs.list', () => ({ value: [] }))
   on('env.get', ($, e) => ({ value: e.name === 'HOME' ? '/home/user' : undefined }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
@@ -70,17 +72,17 @@ test('external runner: master-only, agy auto rejection, isolated edit and host d
   expect(h.launches.length).toBe(1)
 })
 
-test('external runner: cwd selects another repository from its top level, carries the agy contract and stays fixed', { options: cfg({ repos: ['/srv/work/other', '/srv/work/nested'] }) }, async ($, on) => {
-  const h = host(on)
+test('external runner: cwd selects another repository from its top level, carries the agy contract and stays fixed', { options: cfg() }, async ($, on) => {
+  const h = host(on, { trusted: JSON.stringify(['/srv/work/other', '/srv/work/nested']) })
   await $.session.start(start)
   // unlisted, relative or dotted paths are refused before anything runs
   for (const cwd of ['relative/path', '/elsewhere', '/srv/work/other/../elsewhere', '/srv/work/otherwise'])
-    expect(result(await call($, { agent: 'safe', prompt: 'read', description: 'task', mode: 'read', cwd }))).toMatch(/inside a repository listed in externalAgents.repos/)
+    expect(result(await call($, { agent: 'safe', prompt: 'read', description: 'task', mode: 'read', cwd }))).toMatch(/inside a repository listed in ~\/.crabbus\/trusted-repos.json/)
   // a symlink inside a listed repository that points outside: refused before git runs at all
-  expect(result(await call($, { agent: 'safe', prompt: 'read', description: 'task', mode: 'read', cwd: '/srv/work/other/link' }))).toMatch(/resolves to \/elsewhere, outside externalAgents.repos/)
+  expect(result(await call($, { agent: 'safe', prompt: 'read', description: 'task', mode: 'read', cwd: '/srv/work/other/link' }))).toMatch(/resolves to \/elsewhere, outside ~\/.crabbus\/trusted-repos.json/)
   expect(h.commands.filter(c => c[0] === 'git' && c.includes('--show-toplevel')).length).toBe(0)
   // a listed path whose repository top level is outside the list (a nested repository)
-  expect(result(await call($, { agent: 'safe', prompt: 'read', description: 'task', mode: 'read', cwd: '/srv/work/nested/sub' }))).toMatch(/resolves to \/repo, outside externalAgents.repos/)
+  expect(result(await call($, { agent: 'safe', prompt: 'read', description: 'task', mode: 'read', cwd: '/srv/work/nested/sub' }))).toMatch(/resolves to \/repo, outside ~\/.crabbus\/trusted-repos.json/)
   expect(h.launches.length).toBe(0)
   const id = result(await call($, { agent: 'safe', prompt: 'read the review', description: 'task', mode: 'read', cwd: '/srv/work/other/docs' })).split(' ')[0]!
   // the mock child speaks Codex, so this agy turn ends without its final result: only the launch matters
@@ -93,8 +95,21 @@ test('external runner: cwd selects another repository from its top level, carrie
   expect(result(await call($, { agent: 'safe', to: id, prompt: 'again', cwd: '/repo' }))).toMatch(/cannot change cwd/)
 })
 
-test('external runner: a listed cwd outside any git work tree is refused before launch; git never runs repository hooks', { options: cfg({ repos: ['/tmp/work/loose'] }) }, async ($, on) => {
-  const h = host(on, { noGit: true })
+test('external runner: cwd is refused without a trusted repositories file, and plugin options cannot trust a repository', { options: cfg({ repos: ['/srv/work/other'] }) }, async ($, on) => {
+  const h = host(on)
+  await $.session.start(start)
+  expect(result(await call($, { agent: 'safe', prompt: 'read', description: 'task', mode: 'read', cwd: '/srv/work/other' }))).toMatch(/inside a repository listed in ~\/.crabbus\/trusted-repos.json/)
+  expect(h.commands.length).toBe(h.commands.filter(c => c.includes('--version')).length)
+})
+
+test('external runner: a malformed or over-broad trusted repositories file is refused', { options: cfg() }, async ($, on) => {
+  host(on, { trusted: '["/"]' })
+  await $.session.start(start)
+  expect(result(await call($, { agent: 'safe', prompt: 'read', description: 'task', mode: 'read', cwd: '/srv/work/other' }))).toMatch(/must be a JSON array of absolute repository paths/)
+})
+
+test('external runner: a listed cwd outside any git work tree is refused before launch; git never runs repository hooks', { options: cfg() }, async ($, on) => {
+  const h = host(on, { noGit: true, trusted: JSON.stringify(['/tmp/work/loose']) })
   await $.session.start(start)
   expect(result(await call($, { agent: 'safe', prompt: 'read', description: 'task', mode: 'read', cwd: '/tmp/work/loose' }))).toMatch(/not inside a git work tree/)
   expect(h.launches.length).toBe(0)

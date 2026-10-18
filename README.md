@@ -357,11 +357,13 @@ entries tell the master they are data to review, not instructions; a turn that c
 nothing because its commands were denied carries a warning instead of a bare "done".
 A new call takes `agent`, `prompt`, `description`, and optional `mode` (`edit` by default,
 or `read`) and `cwd` (an absolute path inside another git repository than the session's; the
-agent works from its top level). `cwd` must lie inside a path listed in `externalAgents.repos`
-(`"repos": ["/abs/path/to/repo"]`, absolute, at least three segments, no `.` or `..`). The real
-path (`realpath`, not git) is checked before git runs there, and the repository's top level after:
-a repository's own config can make git run its code, and plugin options may come from settings a
-repository supplies, so broad roots such as `/` or `/Users/name` are refused.
+agent works from its top level). `cwd` must lie inside a repository listed in
+`~/.crabbus/trusted-repos.json`, a JSON array such as `["/abs/path/to/repo"]` (absolute, at least
+three segments, no `.`, `..` or `//`). It is a file in HOME and not a plugin option because plugin
+options may come from settings a repository supplies, which could trust itself or any path. The
+real path (`realpath`, not git) is checked before git runs there, and the repository's top level
+after: a repository's own config can make git run its code. Settings that can set `HOME` or `PATH`
+already control every command CrabBus runs and are outside what it can defend.
 Every git call CrabBus makes runs with `core.fsmonitor=false` and `core.hooksPath=/dev/null`.
 Subagents cannot delegate. `to` resumes an existing external agent using its
 saved provider session; busy agents queue messages FIFO, without simultaneous processes.
@@ -591,11 +593,13 @@ entries tell the master they are data to review, not instructions; a turn that c
 nothing because its commands were denied carries a warning instead of a bare "done".
 A new call takes `agent`, `prompt`, `description`, and optional `mode` (`edit` by default,
 or `read`) and `cwd` (an absolute path inside another git repository than the session's; the
-agent works from its top level). `cwd` must lie inside a path listed in `externalAgents.repos`
-(`"repos": ["/abs/path/to/repo"]`, absolute, at least three segments, no `.` or `..`). The real
-path (`realpath`, not git) is checked before git runs there, and the repository's top level after:
-a repository's own config can make git run its code, and plugin options may come from settings a
-repository supplies, so broad roots such as `/` or `/Users/name` are refused.
+agent works from its top level). `cwd` must lie inside a repository listed in
+`~/.crabbus/trusted-repos.json`, a JSON array such as `["/abs/path/to/repo"]` (absolute, at least
+three segments, no `.`, `..` or `//`). It is a file in HOME and not a plugin option because plugin
+options may come from settings a repository supplies, which could trust itself or any path. The
+real path (`realpath`, not git) is checked before git runs there, and the repository's top level
+after: a repository's own config can make git run its code. Settings that can set `HOME` or `PATH`
+already control every command CrabBus runs and are outside what it can defend.
 Every git call CrabBus makes runs with `core.fsmonitor=false` and `core.hooksPath=/dev/null`.
 Subagents cannot delegate. `to` resumes an existing external agent using its
 saved provider session; busy agents queue messages FIFO, without simultaneous processes.

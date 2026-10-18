@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { externalConfig, externalLabel, safeSession, CLAUDE_SANDBOX, externalTaskNote, externalUsageDelta, externalArgv, externalParser, externalLines, allowedRepo, AGY_AUTO_ERROR, AGY_WORKER_BRIEF, type ExternalCli, type ExtEvent } from '../src/external.ts'
+import { externalConfig, externalLabel, safeSession, CLAUDE_SANDBOX, externalTaskNote, externalUsageDelta, externalArgv, externalParser, externalLines, allowedRepo, trustedRepos, TRUSTED_REPOS_FILE, AGY_AUTO_ERROR, AGY_WORKER_BRIEF, type ExternalCli, type ExtEvent } from '../src/external.ts'
 import { emptyState, statusReport, onSpawn, onExternal, onResume, onUsage, onToolStart, onToolEnd } from '../src/model.ts'
 import { agentView, listModel, detailModel } from '../src/panel.ts'
 
@@ -18,15 +18,16 @@ test('external config validates limits, names, environment and rejects agy auto 
   assert.throws(() => externalArgv(cfg.agents.a!, 'task', '/repo', 'edit'), { message: AGY_AUTO_ERROR })
 })
 
-test('external repos: listed absolute paths only, matched on whole path segments', () => {
-  assert.deepEqual(externalConfig(undefined).repos, [])
-  assert.deepEqual(externalConfig('{"repos":["/a/b/repo/"]}').repos, ['/a/b/repo'])
-  // broad roots are refused: plugin options may come from settings a repository supplies
-  for (const raw of ['{"repos":"/a"}', '{"repos":["relative"]}', '{"repos":["/a/../b/c"]}', '{"repos":[3]}', '{"repos":["/"]}', '{"repos":["/Users/name"]}']) assert.throws(() => externalConfig(raw), raw)
-  const repos = ['/a/repo']
-  for (const p of ['/a/repo', '/a/repo/sub/dir']) assert.ok(allowedRepo(p, repos), p)
-  for (const p of ['/a/repository', '/a', '/a/repo/../x', '/a/repo/./x', 'a/repo', '/a/repo\0']) assert.ok(!allowedRepo(p, repos), p)
-  assert.ok(!allowedRepo('/a/repo', []))
+test('external trusted repositories: a file in HOME, absolute repository paths only, matched on whole segments', () => {
+  // plugin options cannot trust a repository: settings a repository supplies could list anything
+  assert.equal('repos' in externalConfig('{"repos":["/a/b/repo"]}'), false)
+  assert.deepEqual(trustedRepos('["/a/b/repo/"]'), ['/a/b/repo'])
+  for (const raw of ['{', '"/a/b/c"', '["relative/a/b"]', '["/a/../b/c"]', '[3]', '["/"]', '["/Users/name"]', '["/a//b/c"]']) assert.throws(() => trustedRepos(raw), raw)
+  const repos = ['/a/b/repo']
+  for (const p of ['/a/b/repo', '/a/b/repo/sub/dir']) assert.ok(allowedRepo(p, repos), p)
+  for (const p of ['/a/b/repository', '/a/b', '/a/b/repo/../x', '/a/b/repo/./x', 'a/b/repo', '/a/b/repo//x', '/a/b/repo\0']) assert.ok(!allowedRepo(p, repos), p)
+  assert.ok(!allowedRepo('/a/b/repo', []))
+  assert.equal(TRUSTED_REPOS_FILE, '.crabbus/trusted-repos.json')
 })
 
 test('external args preserve sandbox, mode, profile-specific allowances and continuation', () => {

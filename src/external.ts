@@ -3,7 +3,7 @@ import type { Usage } from './price.ts'
 
 export type ExternalCli = 'codex' | 'agy' | 'claude'
 export type ExternalAgent = { cli: ExternalCli; model?: string; env?: Record<string, string>; allow?: string[]; level?: 'safe' | 'auto'; label?: string }
-export type ExternalConfig = { maxConcurrent: number; maxMinutes: number; agents: Record<string, ExternalAgent>; repos: string[] }
+export type ExternalConfig = { maxConcurrent: number; maxMinutes: number; agents: Record<string, ExternalAgent> }
 export const AGY_AUTO_ERROR = 'agy auto is not supported yet: git fails inside its sandbox, see PR #9'
 const obj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const text = (v: unknown): string => typeof v === 'string' ? v : ''
@@ -50,15 +50,26 @@ export function externalConfig(raw: unknown): ExternalConfig {
       ...(v['allow'] ? { allow: v['allow'] as string[] } : {}), ...(v['level'] ? { level: v['level'] as 'safe' | 'auto' } : {}),
       ...(v['label'] ? { label: text(v['label']).trim() } : {}) }
   }
-  const repos = o['repos'] ?? []
-  if (!Array.isArray(repos) || repos.some(r => !plainAbsolute(text(r)))) throw Error('externalAgents.repos must list absolute paths without . or .. segments')
-  // plugin options may come from settings a repository supplies: a broad root would trust everything
-  if (repos.some(r => text(r).split('/').filter(Boolean).length < 3)) throw Error('externalAgents.repos must name repositories, not roots such as / or /Users/name')
-  return { maxConcurrent, maxMinutes, agents, repos: repos.map(r => text(r).replace(/\/+$/, '')) }
+  // `repos` is deliberately not read here: trusted repositories live in ~/.crabbus/trusted-repos.json
+  return { maxConcurrent, maxMinutes, agents }
 }
 
 const plainAbsolute = (p: string): boolean =>
-  p.startsWith('/') && p.length <= 1024 && !p.includes('\0') && !p.split('/').some(s => s === '.' || s === '..')
+  p.startsWith('/') && p.length <= 1024 && !p.includes('\0') && !p.includes('//') && !p.split('/').some(s => s === '.' || s === '..')
+
+/** Where the person lists the other repositories bus_delegate may work in, relative to HOME. Not a
+ *  plugin option: options may come from settings a repository supplies, which could trust itself or
+ *  any path. A file in HOME is one no repository's settings can write. */
+export const TRUSTED_REPOS_FILE = '.crabbus/trusted-repos.json'
+
+/** The trusted repositories file: a JSON array of absolute paths naming repositories, never roots. */
+export function trustedRepos(raw: string): string[] {
+  let v: unknown
+  try { v = JSON.parse(raw) } catch { throw Error(`~/${TRUSTED_REPOS_FILE} is not valid JSON`) }
+  if (!Array.isArray(v) || v.some(r => typeof r !== 'string' || !plainAbsolute(r) || r.split('/').filter(Boolean).length < 3))
+    throw Error(`~/${TRUSTED_REPOS_FILE} must be a JSON array of absolute repository paths (at least three segments, no . or ..)`)
+  return v.map(r => (r as string).replace(/\/+$/, ''))
+}
 
 /** Another repository than the session's is trusted only when the person listed it: git runs there
  *  (`rev-parse`, `status`, `worktree add`), and a repository's own config can make git run its code. */

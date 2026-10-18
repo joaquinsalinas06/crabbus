@@ -19,10 +19,11 @@ have checked it.
 
 ## Another repository
 
-Both take `cwd` (an absolute path inside the repository). It must be inside a path the person listed
-in `externalAgents.repos`: git runs there, and a repository's own config can make git run its code,
-so an unlisted path is refused before anything runs. If the repository you need is not listed, ask
-the person to add it; never work around it by pasting its paths into the prompt.
+Both take `cwd` (an absolute path inside the repository). It must be inside a repository the person
+listed in `~/.crabbus/trusted-repos.json`: git runs there, and a repository's own config can make git
+run its code, so an unlisted path is refused before anything runs. If the repository you need is not
+listed, ask the person to add it; never add it yourself, and never work around it by pasting its
+paths into the prompt.
 
 # Antigravity specifics
 
