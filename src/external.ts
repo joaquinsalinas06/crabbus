@@ -52,6 +52,8 @@ export function externalConfig(raw: unknown): ExternalConfig {
   }
   const repos = o['repos'] ?? []
   if (!Array.isArray(repos) || repos.some(r => !plainAbsolute(text(r)))) throw Error('externalAgents.repos must list absolute paths without . or .. segments')
+  // plugin options may come from settings a repository supplies: a broad root would trust everything
+  if (repos.some(r => text(r).split('/').filter(Boolean).length < 3)) throw Error('externalAgents.repos must name repositories, not roots such as / or /Users/name')
   return { maxConcurrent, maxMinutes, agents, repos: repos.map(r => text(r).replace(/\/+$/, '')) }
 }
 

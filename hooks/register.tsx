@@ -725,8 +725,15 @@ const delegate = async ($: EngineInterface, args: Record<string, unknown>): Prom
   try {
   let cwd = typeof requested === 'string' ? requested : await $.session.cwd(), dirty = 0
   if (typeof requested === 'string') {
-    cwd = (await hostGit($, cwd, ['rev-parse', '--show-toplevel']).catch(() => { throw Error(`cwd is not inside a git work tree: ${requested}`) })).trim()
-    // a symlink or a nested repository may resolve elsewhere: its top level must be listed too
+    // a symlink inside a listed repository may point anywhere: resolve it without git, and check the
+    // real path before git reads any repository config there
+    const real = await $.process.run(['realpath', requested], { timeoutMs: 5000 })
+    const resolved = real.exitCode === 0 ? real.stdout.trim() : ''
+    if (!resolved) throw Error(`cwd does not exist: ${requested}`)
+    if (!allowedRepo(resolved, extConfig.repos)) throw Error(`cwd resolves to ${resolved}, outside externalAgents.repos`)
+    if (await $.env.get('HOME').catch(() => undefined) === resolved) throw Error('cwd cannot be the home directory')
+    cwd = (await hostGit($, resolved, ['rev-parse', '--show-toplevel']).catch(() => { throw Error(`cwd is not inside a git work tree: ${requested}`) })).trim()
+    // a nested repository may have its top level outside the list
     if (!allowedRepo(cwd, extConfig.repos)) throw Error(`cwd resolves to ${cwd}, outside externalAgents.repos`)
   }
   if (mode === 'edit') {

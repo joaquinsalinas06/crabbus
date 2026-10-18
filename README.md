@@ -358,8 +358,10 @@ nothing because its commands were denied carries a warning instead of a bare "do
 A new call takes `agent`, `prompt`, `description`, and optional `mode` (`edit` by default,
 or `read`) and `cwd` (an absolute path inside another git repository than the session's; the
 agent works from its top level). `cwd` must lie inside a path listed in `externalAgents.repos`
-(`"repos": ["/abs/path/to/repo"]`, absolute, no `.` or `..` segments), checked before git runs
-there and again on the resolved top level: a repository's own config can make git run its code.
+(`"repos": ["/abs/path/to/repo"]`, absolute, at least three segments, no `.` or `..`). The real
+path (`realpath`, not git) is checked before git runs there, and the repository's top level after:
+a repository's own config can make git run its code, and plugin options may come from settings a
+repository supplies, so broad roots such as `/` or `/Users/name` are refused.
 Every git call CrabBus makes runs with `core.fsmonitor=false` and `core.hooksPath=/dev/null`.
 Subagents cannot delegate. `to` resumes an existing external agent using its
 saved provider session; busy agents queue messages FIFO, without simultaneous processes.
@@ -590,8 +592,10 @@ nothing because its commands were denied carries a warning instead of a bare "do
 A new call takes `agent`, `prompt`, `description`, and optional `mode` (`edit` by default,
 or `read`) and `cwd` (an absolute path inside another git repository than the session's; the
 agent works from its top level). `cwd` must lie inside a path listed in `externalAgents.repos`
-(`"repos": ["/abs/path/to/repo"]`, absolute, no `.` or `..` segments), checked before git runs
-there and again on the resolved top level: a repository's own config can make git run its code.
+(`"repos": ["/abs/path/to/repo"]`, absolute, at least three segments, no `.` or `..`). The real
+path (`realpath`, not git) is checked before git runs there, and the repository's top level after:
+a repository's own config can make git run its code, and plugin options may come from settings a
+repository supplies, so broad roots such as `/` or `/Users/name` are refused.
 Every git call CrabBus makes runs with `core.fsmonitor=false` and `core.hooksPath=/dev/null`.
 Subagents cannot delegate. `to` resumes an existing external agent using its
 saved provider session; busy agents queue messages FIFO, without simultaneous processes.

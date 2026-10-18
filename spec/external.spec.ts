@@ -20,8 +20,9 @@ test('external config validates limits, names, environment and rejects agy auto 
 
 test('external repos: listed absolute paths only, matched on whole path segments', () => {
   assert.deepEqual(externalConfig(undefined).repos, [])
-  assert.deepEqual(externalConfig('{"repos":["/a/repo/"]}').repos, ['/a/repo'])
-  for (const raw of ['{"repos":"/a"}', '{"repos":["relative"]}', '{"repos":["/a/../b"]}', '{"repos":[3]}']) assert.throws(() => externalConfig(raw), raw)
+  assert.deepEqual(externalConfig('{"repos":["/a/b/repo/"]}').repos, ['/a/b/repo'])
+  // broad roots are refused: plugin options may come from settings a repository supplies
+  for (const raw of ['{"repos":"/a"}', '{"repos":["relative"]}', '{"repos":["/a/../b/c"]}', '{"repos":[3]}', '{"repos":["/"]}', '{"repos":["/Users/name"]}']) assert.throws(() => externalConfig(raw), raw)
   const repos = ['/a/repo']
   for (const p of ['/a/repo', '/a/repo/sub/dir']) assert.ok(allowedRepo(p, repos), p)
   for (const p of ['/a/repository', '/a', '/a/repo/../x', '/a/repo/./x', 'a/repo', '/a/repo\0']) assert.ok(!allowedRepo(p, repos), p)

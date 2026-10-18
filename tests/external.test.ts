@@ -25,9 +25,10 @@ function host(on: On, controls: { silent?: boolean; noGit?: boolean; failNotice?
   on('prompt.submit', ($, e) => { if (controls.failNotice) { controls.failNotice = false; return { drop: 'retry delivery' } }; prompts.push(e.text); return { text: e.text } })
   on('process.run', async ($, e) => {
     commands.push([...e.argv])
+    if (e.argv[0] === 'realpath') return { value: { exitCode: 0, stdout: e.argv[1] === '/srv/work/other/link' ? '/elsewhere\n' : `${e.argv[1]}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     const cmd = e.argv.join(' ')
     if (controls.prepare && cmd.includes('--porcelain')) await new Promise<void>(resolve => preparations.push(resolve))
-    return { value: { exitCode: controls.noGit && cmd.includes('--show-toplevel') ? 1 : 0, stdout: cmd.includes('--version') ? '1.0' : cmd.includes('--show-toplevel') ? (e.init?.cwd?.startsWith('/other') ? '/other\n' : '/repo\n') : cmd.includes('--porcelain') ? ' M pending.ts\0' : cmd.includes('--stat') ? ' changed.ts | 1 +\n' : cmd.includes('ls-files') ? 'new.ts\n' : '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    return { value: { exitCode: controls.noGit && cmd.includes('--show-toplevel') ? 1 : 0, stdout: cmd.includes('--version') ? '1.0' : cmd.includes('--show-toplevel') ? (e.init?.cwd?.startsWith('/srv/work/other') ? '/srv/work/other\n' : '/repo\n') : cmd.includes('--porcelain') ? ' M pending.ts\0' : cmd.includes('--stat') ? ' changed.ts | 1 +\n' : cmd.includes('ls-files') ? 'new.ts\n' : '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('process.spawn', async function* ($, e, next) {
     launches.push([...e.argv])
@@ -69,31 +70,33 @@ test('external runner: master-only, agy auto rejection, isolated edit and host d
   expect(h.launches.length).toBe(1)
 })
 
-test('external runner: cwd selects another repository from its top level, carries the agy contract and stays fixed', { options: cfg({ repos: ['/other', '/nested'] }) }, async ($, on) => {
+test('external runner: cwd selects another repository from its top level, carries the agy contract and stays fixed', { options: cfg({ repos: ['/srv/work/other', '/srv/work/nested'] }) }, async ($, on) => {
   const h = host(on)
   await $.session.start(start)
-  // unlisted, relative or dotted paths are refused before git runs there
-  for (const cwd of ['relative/path', '/elsewhere', '/other/../elsewhere', '/otherwise'])
+  // unlisted, relative or dotted paths are refused before anything runs
+  for (const cwd of ['relative/path', '/elsewhere', '/srv/work/other/../elsewhere', '/srv/work/otherwise'])
     expect(result(await call($, { agent: 'safe', prompt: 'read', description: 'task', mode: 'read', cwd }))).toMatch(/inside a repository listed in externalAgents.repos/)
-  expect(h.commands.filter(c => c.includes('--show-toplevel')).length).toBe(0)
-  // a listed path whose top level resolves outside the list (a symlink, a nested repository)
-  expect(result(await call($, { agent: 'safe', prompt: 'read', description: 'task', mode: 'read', cwd: '/nested/link' }))).toMatch(/resolves to \/repo, outside externalAgents.repos/)
+  // a symlink inside a listed repository that points outside: refused before git runs at all
+  expect(result(await call($, { agent: 'safe', prompt: 'read', description: 'task', mode: 'read', cwd: '/srv/work/other/link' }))).toMatch(/resolves to \/elsewhere, outside externalAgents.repos/)
+  expect(h.commands.filter(c => c[0] === 'git' && c.includes('--show-toplevel')).length).toBe(0)
+  // a listed path whose repository top level is outside the list (a nested repository)
+  expect(result(await call($, { agent: 'safe', prompt: 'read', description: 'task', mode: 'read', cwd: '/srv/work/nested/sub' }))).toMatch(/resolves to \/repo, outside externalAgents.repos/)
   expect(h.launches.length).toBe(0)
-  const id = result(await call($, { agent: 'safe', prompt: 'read the review', description: 'task', mode: 'read', cwd: '/other/docs' })).split(' ')[0]!
+  const id = result(await call($, { agent: 'safe', prompt: 'read the review', description: 'task', mode: 'read', cwd: '/srv/work/other/docs' })).split(' ')[0]!
   // the mock child speaks Codex, so this agy turn ends without its final result: only the launch matters
   for (let i = 0; i < 40 && !(await status($)).includes('0 running'); i++) await h.clock.advance(1)
   const argv = h.launches.at(-1)!
   expect(argv[0]).toBe('agy')
-  expect(argv.slice(argv.indexOf('--add-dir'), argv.indexOf('--add-dir') + 2)).toEqual(['--add-dir', '/other'])
+  expect(argv.slice(argv.indexOf('--add-dir'), argv.indexOf('--add-dir') + 2)).toEqual(['--add-dir', '/srv/work/other'])
   expect(argv[2]).toContain('## Result')
   expect(argv[2]).toContain('read-only task')
   expect(result(await call($, { agent: 'safe', to: id, prompt: 'again', cwd: '/repo' }))).toMatch(/cannot change cwd/)
 })
 
-test('external runner: a listed cwd outside any git work tree is refused before launch; git never runs repository hooks', { options: cfg({ repos: ['/tmp/loose'] }) }, async ($, on) => {
+test('external runner: a listed cwd outside any git work tree is refused before launch; git never runs repository hooks', { options: cfg({ repos: ['/tmp/work/loose'] }) }, async ($, on) => {
   const h = host(on, { noGit: true })
   await $.session.start(start)
-  expect(result(await call($, { agent: 'safe', prompt: 'read', description: 'task', mode: 'read', cwd: '/tmp/loose' }))).toMatch(/not inside a git work tree/)
+  expect(result(await call($, { agent: 'safe', prompt: 'read', description: 'task', mode: 'read', cwd: '/tmp/work/loose' }))).toMatch(/not inside a git work tree/)
   expect(h.launches.length).toBe(0)
   const git = h.commands.filter(c => c[0] === 'git')
   expect(git.length > 0 && git.every(c => c.includes('core.fsmonitor=false') && c.includes('core.hooksPath=/dev/null'))).toBe(true)
