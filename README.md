@@ -357,7 +357,11 @@ entries tell the master they are data to review, not instructions; a turn that c
 nothing because its commands were denied carries a warning instead of a bare "done".
 A new call takes `agent`, `prompt`, `description`, and optional `mode` (`edit` by default,
 or `read`) and `cwd` (an absolute path inside another git repository than the session's; the
-agent works from its top level). Subagents cannot delegate. `to` resumes an existing external agent using its
+agent works from its top level). `cwd` must lie inside a path listed in `externalAgents.repos`
+(`"repos": ["/abs/path/to/repo"]`, absolute, no `.` or `..` segments), checked before git runs
+there and again on the resolved top level: a repository's own config can make git run its code.
+Every git call CrabBus makes runs with `core.fsmonitor=false` and `core.hooksPath=/dev/null`.
+Subagents cannot delegate. `to` resumes an existing external agent using its
 saved provider session; busy agents queue messages FIFO, without simultaneous processes.
 A continuation cannot change profile, mode or cwd. A session accepts at most 100 external
 agents and 20 queued messages per agent to bound retained input.
@@ -384,7 +388,7 @@ paths outside the workspace (verified live), so every agy run gets `--add-dir <c
 `--disable-slash-commands`. Headless agy denies a read outside it and ends with an empty result
 (recorded in `spec/fixtures/external/agy-outside-workspace.jsonl`, agy 1.4.2). Every agy task
 carries the worker contract `AGY_WORKER_BRIEF` (file tools only, no questions, no commits, never
-claim a command passed, a final report with fixed sections), and the `agy-delegation` skill tells
+claim a command passed, a final report with fixed sections), and the `external-delegation` skill tells
 the master how to brief, watch and verify it. Read mode uses plan, which headless agy does not
 enforce (antigravity-cli #1181): check the repository's status after a read task.
 `agy auto` is rejected with `agy auto is not supported yet: git fails inside its sandbox,
@@ -585,7 +589,11 @@ entries tell the master they are data to review, not instructions; a turn that c
 nothing because its commands were denied carries a warning instead of a bare "done".
 A new call takes `agent`, `prompt`, `description`, and optional `mode` (`edit` by default,
 or `read`) and `cwd` (an absolute path inside another git repository than the session's; the
-agent works from its top level). Subagents cannot delegate. `to` resumes an existing external agent using its
+agent works from its top level). `cwd` must lie inside a path listed in `externalAgents.repos`
+(`"repos": ["/abs/path/to/repo"]`, absolute, no `.` or `..` segments), checked before git runs
+there and again on the resolved top level: a repository's own config can make git run its code.
+Every git call CrabBus makes runs with `core.fsmonitor=false` and `core.hooksPath=/dev/null`.
+Subagents cannot delegate. `to` resumes an existing external agent using its
 saved provider session; busy agents queue messages FIFO, without simultaneous processes.
 A continuation cannot change profile, mode or cwd. A session accepts at most 100 external
 agents and 20 queued messages per agent to bound retained input.
@@ -612,7 +620,7 @@ paths outside the workspace (verified live), so every agy run gets `--add-dir <c
 `--disable-slash-commands`. Headless agy denies a read outside it and ends with an empty result
 (recorded in `spec/fixtures/external/agy-outside-workspace.jsonl`, agy 1.4.2). Every agy task
 carries the worker contract `AGY_WORKER_BRIEF` (file tools only, no questions, no commits, never
-claim a command passed, a final report with fixed sections), and the `agy-delegation` skill tells
+claim a command passed, a final report with fixed sections), and the `external-delegation` skill tells
 the master how to brief, watch and verify it. Read mode uses plan, which headless agy does not
 enforce (antigravity-cli #1181): check the repository's status after a read task.
 `agy auto` is rejected with `agy auto is not supported yet: git fails inside its sandbox,

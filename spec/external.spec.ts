@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { externalConfig, externalLabel, safeSession, CLAUDE_SANDBOX, externalTaskNote, externalUsageDelta, externalArgv, externalParser, externalLines, AGY_AUTO_ERROR, AGY_WORKER_BRIEF, type ExternalCli, type ExtEvent } from '../src/external.ts'
+import { externalConfig, externalLabel, safeSession, CLAUDE_SANDBOX, externalTaskNote, externalUsageDelta, externalArgv, externalParser, externalLines, allowedRepo, AGY_AUTO_ERROR, AGY_WORKER_BRIEF, type ExternalCli, type ExtEvent } from '../src/external.ts'
 import { emptyState, statusReport, onSpawn, onExternal, onResume, onUsage, onToolStart, onToolEnd } from '../src/model.ts'
 import { agentView, listModel, detailModel } from '../src/panel.ts'
 
@@ -16,6 +16,16 @@ test('external config validates limits, names, environment and rejects agy auto 
   for (const raw of ['{', '[]', '{"maxConcurrent":0}', '{"maxMinutes":0}', '{"agents":{"bad":{"cli":"unknown"}}}', '{"agents":{"a":{"cli":"codex","env":{"x":3}}}}']) assert.throws(() => externalConfig(raw))
   const cfg = externalConfig('{"agents":{"a":{"cli":"agy","level":"auto"}}}')
   assert.throws(() => externalArgv(cfg.agents.a!, 'task', '/repo', 'edit'), { message: AGY_AUTO_ERROR })
+})
+
+test('external repos: listed absolute paths only, matched on whole path segments', () => {
+  assert.deepEqual(externalConfig(undefined).repos, [])
+  assert.deepEqual(externalConfig('{"repos":["/a/repo/"]}').repos, ['/a/repo'])
+  for (const raw of ['{"repos":"/a"}', '{"repos":["relative"]}', '{"repos":["/a/../b"]}', '{"repos":[3]}']) assert.throws(() => externalConfig(raw), raw)
+  const repos = ['/a/repo']
+  for (const p of ['/a/repo', '/a/repo/sub/dir']) assert.ok(allowedRepo(p, repos), p)
+  for (const p of ['/a/repository', '/a', '/a/repo/../x', '/a/repo/./x', 'a/repo', '/a/repo\0']) assert.ok(!allowedRepo(p, repos), p)
+  assert.ok(!allowedRepo('/a/repo', []))
 })
 
 test('external args preserve sandbox, mode, profile-specific allowances and continuation', () => {

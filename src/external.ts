@@ -3,7 +3,7 @@ import type { Usage } from './price.ts'
 
 export type ExternalCli = 'codex' | 'agy' | 'claude'
 export type ExternalAgent = { cli: ExternalCli; model?: string; env?: Record<string, string>; allow?: string[]; level?: 'safe' | 'auto'; label?: string }
-export type ExternalConfig = { maxConcurrent: number; maxMinutes: number; agents: Record<string, ExternalAgent> }
+export type ExternalConfig = { maxConcurrent: number; maxMinutes: number; agents: Record<string, ExternalAgent>; repos: string[] }
 export const AGY_AUTO_ERROR = 'agy auto is not supported yet: git fails inside its sandbox, see PR #9'
 const obj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const text = (v: unknown): string => typeof v === 'string' ? v : ''
@@ -50,8 +50,18 @@ export function externalConfig(raw: unknown): ExternalConfig {
       ...(v['allow'] ? { allow: v['allow'] as string[] } : {}), ...(v['level'] ? { level: v['level'] as 'safe' | 'auto' } : {}),
       ...(v['label'] ? { label: text(v['label']).trim() } : {}) }
   }
-  return { maxConcurrent, maxMinutes, agents }
+  const repos = o['repos'] ?? []
+  if (!Array.isArray(repos) || repos.some(r => !plainAbsolute(text(r)))) throw Error('externalAgents.repos must list absolute paths without . or .. segments')
+  return { maxConcurrent, maxMinutes, agents, repos: repos.map(r => text(r).replace(/\/+$/, '')) }
 }
+
+const plainAbsolute = (p: string): boolean =>
+  p.startsWith('/') && p.length <= 1024 && !p.includes('\0') && !p.split('/').some(s => s === '.' || s === '..')
+
+/** Another repository than the session's is trusted only when the person listed it: git runs there
+ *  (`rev-parse`, `status`, `worktree add`), and a repository's own config can make git run its code. */
+export const allowedRepo = (path: string, repos: readonly string[]): boolean =>
+  plainAbsolute(path) && repos.some(r => path === r || path.startsWith(`${r}/`))
 
 const PRODUCT: Record<ExternalCli, string> = { codex: 'Codex', agy: 'Antigravity', claude: 'Claude' }
 
@@ -62,7 +72,7 @@ export const externalLabel = (name: string, cfg: ExternalAgent): string => {
   return name === cfg.cli || name === product.toLowerCase() ? product : `${product} · ${name}`
 }
 
-/** The worker contract every Antigravity task carries (skills/agy-delegation/SKILL.md explains it to the
+/** The worker contract every Antigravity task carries (skills/external-delegation/SKILL.md explains it to the
  *  master). Headless agy has no one to answer it: shell commands and questions are refused, and a turn
  *  that ends without a final message reaches the master as an empty result. */
 export const AGY_WORKER_BRIEF = [

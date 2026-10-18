@@ -11,7 +11,7 @@ import type { EngineInterface, FsEntry, Register, RenderChildren, RenderElement,
 import { CARD_H, CARD_W, canvas, cellsOf, drawAgent } from '../src/art.ts'
 import type { Canvas } from '../src/canvas.ts'
 import { barSvg, sparkSvg, toSvg } from '../src/svg.ts'
-import { externalConfig, externalLabel, safeSession, externalTaskNote, externalUsageDelta, externalArgv, externalParser, externalLines, AGY_AUTO_ERROR, type ExternalConfig, type ExternalAgent, type ExtEvent } from '../src/external.ts'
+import { externalConfig, externalLabel, safeSession, externalTaskNote, externalUsageDelta, externalArgv, externalParser, externalLines, allowedRepo, AGY_AUTO_ERROR, type ExternalConfig, type ExternalAgent, type ExtEvent } from '../src/external.ts'
 import type { Usage } from '../src/price.ts'
 import { BUILTIN } from '../src/builtin.ts'
 import { MASTER, direct, emptyDirector, playOf, type Director } from '../src/director.ts'
@@ -540,7 +540,7 @@ function ensureClock($: EngineInterface, ms: number, still: boolean): void {
 
 const aliases = new Map<string, string>()
 const canonicalId = (id: string | undefined) => id ? aliases.get(id) ?? id : undefined
-let extConfig: ExternalConfig = { agents: {}, maxConcurrent: 3, maxMinutes: 30 }
+let extConfig: ExternalConfig = { agents: {}, maxConcurrent: 3, maxMinutes: 30, repos: [] }
 let externalError = ''
 let externalFrameMs = 167, externalStill = false
 const available = new Set<string>()
@@ -568,8 +568,10 @@ const scheduleNotices = ($: EngineInterface, delay = 0): void => {
 }
 const metadata = (j: Job): NonNullable<AgentRec['ext']> => ({ cli: j.cfg.cli, profile: j.name, label: externalLabel(j.name, j.cfg),
   ...(j.session ? { session: j.session } : {}), ...(j.mode === 'edit' && j.prepared ? { worktree: j.cwd } : {}), ...(j.branch ? { branch: j.branch } : {}) })
+// a repository's own config and hooks never run code from here: fsmonitor and hooks are switched off
+const GIT = ['git', '-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null']
 const hostGit = async ($: EngineInterface, cwd: string, args: string[]) => {
-  const result = await $.process.run(['git', ...args], { cwd, timeoutMs: 10000 })
+  const result = await $.process.run([...GIT, ...args], { cwd, timeoutMs: 10000 })
   if (result.exitCode !== 0) throw Error(result.stderr.slice(-1500) || `git ${args[0]} failed`)
   return result.stdout
 }
@@ -616,7 +618,7 @@ const runJob = async ($: EngineInterface, j: Job): Promise<void> => {
   try {
     if (!j.prepared && j.mode === 'edit') {
       const root = j.cwd
-      const ignored = await $.process.run(['git', 'check-ignore', '-q', '.crabbus/worktrees/probe'], { cwd: root, timeoutMs: 10000 })
+      const ignored = await $.process.run([...GIT, 'check-ignore', '-q', '.crabbus/worktrees/probe'], { cwd: root, timeoutMs: 10000 })
       if (ignored.exitCode !== 0) {
         const exclude = (await hostGit($, root, ['rev-parse', '--path-format=absolute', '--git-path', 'info/exclude'])).trim()
         const prior = await $.fs.exists(exclude) ? String(await $.fs.read(exclude)) : ''
@@ -716,13 +718,17 @@ const delegate = async ($: EngineInterface, args: Record<string, unknown>): Prom
   const mode = args['mode'] === 'read' ? 'read' : 'edit'
   // another repository than the session's: an absolute path inside a git work tree, used from its top level
   const requested = args['cwd']
-  if (requested !== undefined && (typeof requested !== 'string' || !requested.startsWith('/') || requested.includes('\0') || requested.length > 1024))
-    throw Error('cwd must be an absolute path')
+  if (requested !== undefined && (typeof requested !== 'string' || !allowedRepo(requested, extConfig.repos)))
+    throw Error('cwd must be an absolute path inside a repository listed in externalAgents.repos')
   pendingStarts++
   let reserved = true
   try {
   let cwd = typeof requested === 'string' ? requested : await $.session.cwd(), dirty = 0
-  if (typeof requested === 'string') cwd = (await hostGit($, cwd, ['rev-parse', '--show-toplevel']).catch(() => { throw Error(`cwd is not inside a git work tree: ${requested}`) })).trim()
+  if (typeof requested === 'string') {
+    cwd = (await hostGit($, cwd, ['rev-parse', '--show-toplevel']).catch(() => { throw Error(`cwd is not inside a git work tree: ${requested}`) })).trim()
+    // a symlink or a nested repository may resolve elsewhere: its top level must be listed too
+    if (!allowedRepo(cwd, extConfig.repos)) throw Error(`cwd resolves to ${cwd}, outside externalAgents.repos`)
+  }
   if (mode === 'edit') {
     cwd = (await hostGit($, cwd, ['rev-parse', '--show-toplevel'])).trim()
     const status = (await hostGit($, cwd, ['status', '--porcelain=v1', '-z', '--untracked-files=all'])).split('\0').filter(Boolean)
@@ -783,7 +789,7 @@ export const register: Register = (on, options) => {
     }
     if (available.size) await $.tool.register({
       name: 'bus_delegate', isDeferred: false,
-      description: `Master only: delegate directly to subscription CLIs: ${[...available].map(name => `${name} (${externalLabel(name, extConfig.agents[name]!)}; ${extConfig.agents[name]?.cli === 'agy' ? 'file tools only, no terminal; follows the agy-delegation worker contract; auto unsupported' : 'code tasks'})`).join(', ')}. Edit tasks use isolated worktrees without commits. cwd picks another git repository than the session's. to queues a continuation.`,
+      description: `Master only: delegate directly to subscription CLIs: ${[...available].map(name => `${name} (${externalLabel(name, extConfig.agents[name]!)}; ${extConfig.agents[name]?.cli === 'agy' ? 'file tools only, no terminal; follows the external-delegation worker contract; auto unsupported' : 'code tasks'})`).join(', ')}. Edit tasks use isolated worktrees without commits. cwd picks another git repository than the session's. to queues a continuation.`,
       inputSchema: { type: 'object', properties: { agent: { type: 'string' }, prompt: { type: 'string' }, description: { type: 'string' }, to: { type: 'string' }, mode: { type: 'string', enum: ['edit', 'read'] },
         cwd: { type: 'string', description: 'Absolute path inside the git repository to work in; defaults to this session\'s. Not allowed with to.' } }, required: ['agent', 'prompt'] },
     })

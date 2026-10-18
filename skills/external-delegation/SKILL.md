@@ -1,11 +1,30 @@
 ---
-name: agy-delegation
-description: Delegate work to Google Antigravity (agy) through bus_delegate and review it as the master. Use when asked to hand a task to Antigravity or agy, use it as a subagent or worker ("que antigravity lo haga", "delegalo a agy", "usa antigravity como subagente", "let agy implement the amendments"), or when a bus_delegate result from agy comes back empty, denied or unclear.
+name: external-delegation
+description: Delegate work to Antigravity (agy) or Codex through bus_delegate and review it as the master. Use when asked to hand a task to Antigravity, agy or Codex, use one as a subagent or worker ("que antigravity lo haga", "delegalo a codex", "usa antigravity como subagente", "let agy implement the amendments"), to work on another repository than the session's, or when a bus_delegate result comes back empty, denied or unclear.
 ---
 
-# Delegating to Antigravity (agy)
+# Delegating to Antigravity (agy) and Codex
 
-You are the master: agy writes, you decide. Nothing agy reports is true until you have checked it.
+You are the master: the external agent writes, you decide. Nothing it reports is true until you
+have checked it.
+
+## Which one
+
+- **Codex** (`codex exec`): has a terminal inside its OS sandbox (`workspace-write` in edit mode,
+  `read-only` in read mode). It can run tests and builds in its worktree, so its `## Verify`-style
+  claims can come with output; still rerun them yourself. Use it for changes that need a
+  compile-test loop.
+- **Antigravity** (`agy`): file tools only, no terminal. Use it for well-specified edits, docs,
+  reviews and second opinions, where you run every check.
+
+## Another repository
+
+Both take `cwd` (an absolute path inside the repository). It must be inside a path the person listed
+in `externalAgents.repos`: git runs there, and a repository's own config can make git run its code,
+so an unlisted path is refused before anything runs. If the repository you need is not listed, ask
+the person to add it; never work around it by pasting its paths into the prompt.
+
+# Antigravity specifics
 
 ## What agy can and cannot do here
 
@@ -27,9 +46,11 @@ stay in scope, file tools only, no questions, no commits, never claim a command 
 with `## Result`, `## Files`, `## Verify`, `## Assumptions and risks`, `## Pending`. Do not repeat it in
 your prompt; write the task.
 
+# For both
+
 ## Writing the brief
 
-agy starts cold: the brief is all it knows. Make it self-contained:
+The agent starts cold: the brief is all it knows. Make it self-contained:
 
 1. **Goal**: one sentence of the outcome, not the activity.
 2. **Context**: the files to read first (paths relative to `cwd`) and the rule or review that motivates
@@ -45,6 +66,9 @@ agy starts cold: the brief is all it knows. Make it self-contained:
 bus_delegate { agent: "agy", mode: "edit", cwd: "/abs/path/to/repo",
                description: "R63 fixture guard", prompt: "<brief>" }
 ```
+
+The same call with `agent: "codex"` runs Codex. The brief rules below apply to both; Codex does not
+get the agy worker contract, so ask it for the same final sections in your prompt.
 
 - `mode: "read"` for analysis and second opinions; `"edit"` for changes.
 - Watch it with `bus_status` (filter by the id). The result arrives as a plugin message; do not poll.
