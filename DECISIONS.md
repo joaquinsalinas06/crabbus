@@ -42,6 +42,8 @@
 | Tell CrabBus makes a skin unless a new body is asked for in so many words | Guessing a new species from "a capybara costume" | The person's crabs with capybara hats are skins; a new creature is a bigger change they must ask for. |
 | Built-in body choices save same-ID user costume overrides | Editing the installed built-in source | User changes persist without changing shared artwork or losing sibling bundle items. |
 | Body selectors fit-check before enabling and again before saving | Accepting a selection then silently hiding incompatible pieces | The visible body/costume/action/tick reason explains what must be repaired; cached results last only for the current pack revision. |
+| Every agy run gets `--add-dir <cwd>`; `bus_delegate` takes `cwd` for another repository | Relying on the process cwd, or pasting absolute paths of another repo into the prompt | Measured 2026-10-18 with agy 1.4.2: headless agy does not adopt the process cwd as workspace for other paths and denies any read outside it, ending with an empty result (`agy-outside-workspace` fixture); with `--add-dir` the same read succeeds. |
+| Antigravity tasks carry a fixed worker contract (`AGY_WORKER_BRIEF`) in both modes; the master follows the `agy-delegation` skill | Installing a community plugin (antigravity-plugin-cc, claude-antigravity-agents, antigravity-for-claude-code) | They launch `agy -p` with no flags or with `--dangerously-skip-permissions` and leave verification to prose. CrabBus already owns the bus, worktrees and status; what they agree on (self-contained brief, no questions, report then verify diff and checks before merging) is kept as the contract and the skill. |
 
 
 

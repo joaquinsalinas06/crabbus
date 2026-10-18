@@ -27,7 +27,7 @@ function host(on: On, controls: { silent?: boolean; noGit?: boolean; failNotice?
     commands.push([...e.argv])
     const cmd = e.argv.join(' ')
     if (controls.prepare && cmd.includes('--porcelain')) await new Promise<void>(resolve => preparations.push(resolve))
-    return { value: { exitCode: controls.noGit && cmd.includes('--show-toplevel') ? 1 : 0, stdout: cmd.includes('--version') ? '1.0' : cmd.includes('--show-toplevel') ? '/repo\n' : cmd.includes('--porcelain') ? ' M pending.ts\0' : cmd.includes('--stat') ? ' changed.ts | 1 +\n' : cmd.includes('ls-files') ? 'new.ts\n' : '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    return { value: { exitCode: controls.noGit && cmd.includes('--show-toplevel') ? 1 : 0, stdout: cmd.includes('--version') ? '1.0' : cmd.includes('--show-toplevel') ? (e.init?.cwd?.startsWith('/other') ? '/other\n' : '/repo\n') : cmd.includes('--porcelain') ? ' M pending.ts\0' : cmd.includes('--stat') ? ' changed.ts | 1 +\n' : cmd.includes('ls-files') ? 'new.ts\n' : '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('process.spawn', async function* ($, e, next) {
     launches.push([...e.argv])
@@ -67,6 +67,28 @@ test('external runner: master-only, agy auto rejection, isolated edit and host d
   expect(h.prompts[0]).toContain('new.ts')
   expect(h.prompts[0]).toContain('changed.ts')
   expect(h.launches.length).toBe(1)
+})
+
+test('external runner: cwd selects another repository from its top level, carries the agy contract and stays fixed', { options: cfg() }, async ($, on) => {
+  const h = host(on)
+  await $.session.start(start)
+  expect(result(await call($, { agent: 'safe', prompt: 'read', description: 'task', mode: 'read', cwd: 'relative/path' }))).toMatch(/absolute path/)
+  const id = result(await call($, { agent: 'safe', prompt: 'read the review', description: 'task', mode: 'read', cwd: '/other/docs' })).split(' ')[0]!
+  // the mock child speaks Codex, so this agy turn ends without its final result: only the launch matters
+  for (let i = 0; i < 40 && !(await status($)).includes('0 running'); i++) await h.clock.advance(1)
+  const argv = h.launches.at(-1)!
+  expect(argv[0]).toBe('agy')
+  expect(argv.slice(argv.indexOf('--add-dir'), argv.indexOf('--add-dir') + 2)).toEqual(['--add-dir', '/other'])
+  expect(argv[2]).toContain('## Result')
+  expect(argv[2]).toContain('read-only task')
+  expect(result(await call($, { agent: 'safe', to: id, prompt: 'again', cwd: '/repo' }))).toMatch(/cannot change cwd/)
+})
+
+test('external runner: a cwd outside any git work tree is refused before launch', { options: cfg() }, async ($, on) => {
+  const h = host(on, { noGit: true })
+  await $.session.start(start)
+  expect(result(await call($, { agent: 'safe', prompt: 'read', description: 'task', mode: 'read', cwd: '/tmp/loose' }))).toMatch(/not inside a git work tree/)
+  expect(h.launches.length).toBe(0)
 })
 
 test('external runner: results batch while master is busy; continuation reuses the session', { options: cfg() }, async ($, on) => {

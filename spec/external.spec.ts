@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { externalConfig, externalLabel, safeSession, CLAUDE_SANDBOX, externalTaskNote, externalUsageDelta, externalArgv, externalParser, externalLines, AGY_AUTO_ERROR, type ExternalCli, type ExtEvent } from '../src/external.ts'
+import { externalConfig, externalLabel, safeSession, CLAUDE_SANDBOX, externalTaskNote, externalUsageDelta, externalArgv, externalParser, externalLines, AGY_AUTO_ERROR, AGY_WORKER_BRIEF, type ExternalCli, type ExtEvent } from '../src/external.ts'
 import { emptyState, statusReport, onSpawn, onExternal, onResume, onUsage, onToolStart, onToolEnd } from '../src/model.ts'
 import { agentView, listModel, detailModel } from '../src/panel.ts'
 
@@ -26,6 +26,11 @@ test('external args preserve sandbox, mode, profile-specific allowances and cont
   assert.ok(externalArgv({ cli: 'codex' }, 'task', '/repo', 'read').includes('read-only'))
   const a = externalArgv({ cli: 'agy' }, 'task', '/repo', 'edit', 'latest')
   assert.ok(a.includes('accept-edits')); assert.ok(!a.includes('--dangerously-skip-permissions')); assert.equal(a.at(-1), 'latest')
+  // headless agy denies paths outside its workspace: the working directory is always added
+  assert.deepEqual(a.slice(a.indexOf('--add-dir'), a.indexOf('--add-dir') + 2), ['--add-dir', '/repo'])
+  assert.ok(a.includes('--disable-slash-commands'))
+  const r = externalArgv({ cli: 'agy' }, 'task', '/repo', 'read')
+  assert.ok(r.includes('plan')); assert.ok(r.includes('--add-dir')); assert.ok(!r.includes('--conversation'))
   const cl = externalArgv({ cli: 'claude', allow: ['Bash(npm test:*)'] }, 'task', '/repo', 'edit', 'session')
   assert.ok(cl.includes('Bash(npm test:*)')); assert.ok(cl.includes('--resume'))
 })
@@ -40,6 +45,13 @@ test('external fixtures: tools, usage, sessions and agy safe denials retain real
   }
   assert.ok(events('agy', 'agy-safe').some(e => e.kind === 'denied' && e.tool === 'Bash'))
   assert.ok(events('codex', 'codex-user-tmpdir').some(e => e.kind === 'tool' && e.name === 'Bash'))
+})
+
+test('agy outside its workspace: a denied read is reported with its action and an empty result', () => {
+  // recorded with agy 1.4.2 reading a file of another repository without --add-dir
+  const out = events('agy', 'agy-outside-workspace')
+  assert.deepEqual(out.filter(e => e.kind === 'denied'), [{ kind: 'denied', tool: 'ViewFile', arg: 'read_file' }])
+  assert.deepEqual(out.find(e => e.kind === 'done'), { kind: 'done', result: '', ok: true })
 })
 
 test('external lines reconstruct fragmented JSON, isolate buffers and drop oversized lines safely', () => {
@@ -127,9 +139,12 @@ test('external labels read as products, with the profile when it says more, or a
   for (const label of ['""', '"' + 'x'.repeat(41) + '"']) assert.throws(() => externalConfig(`{"agents":{"a":{"cli":"agy","label":${label}}}}`))
 })
 
-test('Antigravity safe edits are told they have no terminal; other CLIs and read mode are not', () => {
-  assert.match(externalTaskNote({ cli: 'agy' }, 'edit'), /no terminal/)
-  assert.equal(externalTaskNote({ cli: 'agy' }, 'read'), '')
+test('Antigravity tasks carry the worker contract in both modes; other CLIs do not', () => {
+  const edit = externalTaskNote({ cli: 'agy' }, 'edit'), read = externalTaskNote({ cli: 'agy' }, 'read')
+  assert.ok(edit.includes(AGY_WORKER_BRIEF)); assert.match(edit, /no terminal/); assert.doesNotMatch(edit, /read-only task/)
+  assert.ok(read.includes(AGY_WORKER_BRIEF)); assert.match(read, /read-only task/)
+  // the final report is what the master receives; an empty one is what the worker contract prevents
+  for (const section of ['## Result', '## Files', '## Verify', '## Assumptions and risks', '## Pending']) assert.ok(AGY_WORKER_BRIEF.includes(section), section)
   assert.equal(externalTaskNote({ cli: 'codex' }, 'edit'), '')
 })
 

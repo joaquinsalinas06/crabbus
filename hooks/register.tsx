@@ -700,6 +700,7 @@ const delegate = async ($: EngineInterface, args: Record<string, unknown>): Prom
     if (!j || j.name !== name) throw Error('to must name an external agent of this configured profile')
     if (j.stopped) throw Error('this agent was cancelled; start a new agent')
     if (args['mode'] !== undefined && args['mode'] !== j.mode) throw Error('a continuation cannot change mode')
+    if (args['cwd'] !== undefined) throw Error('a continuation cannot change cwd')
     if (!j.running && !j.session) throw Error('the CLI did not report a resumable session')
     if (j.queue.length >= 20) throw Error('this agent already has 20 queued messages')
     j.queue.push(prompt)
@@ -713,10 +714,15 @@ const delegate = async ($: EngineInterface, args: Record<string, unknown>): Prom
   if (!description) throw Error('a new external agent requires a description')
   if (args['mode'] !== undefined && args['mode'] !== 'edit' && args['mode'] !== 'read') throw Error('mode must be edit or read')
   const mode = args['mode'] === 'read' ? 'read' : 'edit'
+  // another repository than the session's: an absolute path inside a git work tree, used from its top level
+  const requested = args['cwd']
+  if (requested !== undefined && (typeof requested !== 'string' || !requested.startsWith('/') || requested.includes('\0') || requested.length > 1024))
+    throw Error('cwd must be an absolute path')
   pendingStarts++
   let reserved = true
   try {
-  let cwd = await $.session.cwd(), dirty = 0
+  let cwd = typeof requested === 'string' ? requested : await $.session.cwd(), dirty = 0
+  if (typeof requested === 'string') cwd = (await hostGit($, cwd, ['rev-parse', '--show-toplevel']).catch(() => { throw Error(`cwd is not inside a git work tree: ${requested}`) })).trim()
   if (mode === 'edit') {
     cwd = (await hostGit($, cwd, ['rev-parse', '--show-toplevel'])).trim()
     const status = (await hostGit($, cwd, ['status', '--porcelain=v1', '-z', '--untracked-files=all'])).split('\0').filter(Boolean)
@@ -777,8 +783,9 @@ export const register: Register = (on, options) => {
     }
     if (available.size) await $.tool.register({
       name: 'bus_delegate', isDeferred: false,
-      description: `Master only: delegate directly to subscription CLIs: ${[...available].map(name => `${name} (${externalLabel(name, extConfig.agents[name]!)}; ${extConfig.agents[name]?.cli === 'agy' ? 'safe edits; commands denied; auto unsupported' : 'code tasks'})`).join(', ')}. Edit tasks use isolated worktrees without commits. to queues a continuation.`,
-      inputSchema: { type: 'object', properties: { agent: { type: 'string' }, prompt: { type: 'string' }, description: { type: 'string' }, to: { type: 'string' }, mode: { type: 'string', enum: ['edit', 'read'] } }, required: ['agent', 'prompt'] },
+      description: `Master only: delegate directly to subscription CLIs: ${[...available].map(name => `${name} (${externalLabel(name, extConfig.agents[name]!)}; ${extConfig.agents[name]?.cli === 'agy' ? 'file tools only, no terminal; follows the agy-delegation worker contract; auto unsupported' : 'code tasks'})`).join(', ')}. Edit tasks use isolated worktrees without commits. cwd picks another git repository than the session's. to queues a continuation.`,
+      inputSchema: { type: 'object', properties: { agent: { type: 'string' }, prompt: { type: 'string' }, description: { type: 'string' }, to: { type: 'string' }, mode: { type: 'string', enum: ['edit', 'read'] },
+        cwd: { type: 'string', description: 'Absolute path inside the git repository to work in; defaults to this session\'s. Not allowed with to.' } }, required: ['agent', 'prompt'] },
     })
     await $.tool.register({
       name: 'bus_step',

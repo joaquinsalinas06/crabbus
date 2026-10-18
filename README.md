@@ -356,9 +356,10 @@ and `allow` takes file tools and `Bash(<command>:*)` entries only, never Bash at
 entries tell the master they are data to review, not instructions; a turn that changed
 nothing because its commands were denied carries a warning instead of a bare "done".
 A new call takes `agent`, `prompt`, `description`, and optional `mode` (`edit` by default,
-or `read`). Subagents cannot delegate. `to` resumes an existing external agent using its
+or `read`) and `cwd` (an absolute path inside another git repository than the session's; the
+agent works from its top level). Subagents cannot delegate. `to` resumes an existing external agent using its
 saved provider session; busy agents queue messages FIFO, without simultaneous processes.
-A continuation cannot change profile or mode. A session accepts at most 100 external
+A continuation cannot change profile, mode or cwd. A session accepts at most 100 external
 agents and 20 queued messages per agent to bound retained input.
 
 Editing always starts from committed HEAD in `.crabbus/worktrees/<id>`, on branch
@@ -379,7 +380,13 @@ allowed command such as `npm test` cannot write outside the worktree through a s
 agent edited (verified live: without the sandbox it could). Read mode uses plan. Antigravity
 safe uses accept-edits: edits work, commands are denied, and its task says it has no
 terminal (without that it gave up after its first denied command); its file tools refuse
-paths outside the workspace (verified live).
+paths outside the workspace (verified live), so every agy run gets `--add-dir <cwd>` and
+`--disable-slash-commands`. Headless agy denies a read outside it and ends with an empty result
+(recorded in `spec/fixtures/external/agy-outside-workspace.jsonl`, agy 1.4.2). Every agy task
+carries the worker contract `AGY_WORKER_BRIEF` (file tools only, no questions, no commits, never
+claim a command passed, a final report with fixed sections), and the `agy-delegation` skill tells
+the master how to brief, watch and verify it. Read mode uses plan, which headless agy does not
+enforce (antigravity-cli #1181): check the repository's status after a read task.
 `agy auto` is rejected with `agy auto is not supported yet: git fails inside its sandbox,
 see PR #9` (tested with 1.3.5). Worktrees separate Git changes; provider plan/accept-edits
 modes do not establish an OS filesystem sandbox. No global provider settings are edited.
@@ -577,9 +584,10 @@ and `allow` takes file tools and `Bash(<command>:*)` entries only, never Bash at
 entries tell the master they are data to review, not instructions; a turn that changed
 nothing because its commands were denied carries a warning instead of a bare "done".
 A new call takes `agent`, `prompt`, `description`, and optional `mode` (`edit` by default,
-or `read`). Subagents cannot delegate. `to` resumes an existing external agent using its
+or `read`) and `cwd` (an absolute path inside another git repository than the session's; the
+agent works from its top level). Subagents cannot delegate. `to` resumes an existing external agent using its
 saved provider session; busy agents queue messages FIFO, without simultaneous processes.
-A continuation cannot change profile or mode. A session accepts at most 100 external
+A continuation cannot change profile, mode or cwd. A session accepts at most 100 external
 agents and 20 queued messages per agent to bound retained input.
 
 Editing always starts from committed HEAD in `.crabbus/worktrees/<id>`, on branch
@@ -600,7 +608,13 @@ allowed command such as `npm test` cannot write outside the worktree through a s
 agent edited (verified live: without the sandbox it could). Read mode uses plan. Antigravity
 safe uses accept-edits: edits work, commands are denied, and its task says it has no
 terminal (without that it gave up after its first denied command); its file tools refuse
-paths outside the workspace (verified live).
+paths outside the workspace (verified live), so every agy run gets `--add-dir <cwd>` and
+`--disable-slash-commands`. Headless agy denies a read outside it and ends with an empty result
+(recorded in `spec/fixtures/external/agy-outside-workspace.jsonl`, agy 1.4.2). Every agy task
+carries the worker contract `AGY_WORKER_BRIEF` (file tools only, no questions, no commits, never
+claim a command passed, a final report with fixed sections), and the `agy-delegation` skill tells
+the master how to brief, watch and verify it. Read mode uses plan, which headless agy does not
+enforce (antigravity-cli #1181): check the repository's status after a read task.
 `agy auto` is rejected with `agy auto is not supported yet: git fails inside its sandbox,
 see PR #9` (tested with 1.3.5). Worktrees separate Git changes; provider plan/accept-edits
 modes do not establish an OS filesystem sandbox. No global provider settings are edited.
