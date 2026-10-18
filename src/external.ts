@@ -3,7 +3,7 @@ import type { Usage } from './price.ts'
 
 export type ExternalCli = 'codex' | 'agy' | 'claude'
 export type ExternalAgent = { cli: ExternalCli; model?: string; env?: Record<string, string>; allow?: string[]; level?: 'safe' | 'auto'; label?: string }
-export type ExternalConfig = { maxConcurrent: number; maxMinutes: number; agents: Record<string, ExternalAgent> }
+export type ExternalConfig = { maxConcurrent: number; maxMinutes: number; agents: Record<string, ExternalAgent>; repos: string[] }
 export const AGY_AUTO_ERROR = 'agy auto is not supported yet: git fails inside its sandbox, see PR #9'
 const obj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const text = (v: unknown): string => typeof v === 'string' ? v : ''
@@ -50,8 +50,20 @@ export function externalConfig(raw: unknown): ExternalConfig {
       ...(v['allow'] ? { allow: v['allow'] as string[] } : {}), ...(v['level'] ? { level: v['level'] as 'safe' | 'auto' } : {}),
       ...(v['label'] ? { label: text(v['label']).trim() } : {}) }
   }
-  return { maxConcurrent, maxMinutes, agents }
+  const repos = o['repos'] ?? []
+  if (!Array.isArray(repos) || repos.some(r => !plainAbsolute(text(r)))) throw Error('externalAgents.repos must list absolute paths without . or .. segments')
+  // plugin options may come from settings a repository supplies: a broad root would trust everything
+  if (repos.some(r => text(r).split('/').filter(Boolean).length < 3)) throw Error('externalAgents.repos must name repositories, not roots such as / or /Users/name')
+  return { maxConcurrent, maxMinutes, agents, repos: repos.map(r => text(r).replace(/\/+$/, '')) }
 }
+
+const plainAbsolute = (p: string): boolean =>
+  p.startsWith('/') && p.length <= 1024 && !p.includes('\0') && !p.split('/').some(s => s === '.' || s === '..')
+
+/** Another repository than the session's is trusted only when the person listed it: git runs there
+ *  (`rev-parse`, `status`, `worktree add`), and a repository's own config can make git run its code. */
+export const allowedRepo = (path: string, repos: readonly string[]): boolean =>
+  plainAbsolute(path) && repos.some(r => path === r || path.startsWith(`${r}/`))
 
 const PRODUCT: Record<ExternalCli, string> = { codex: 'Codex', agy: 'Antigravity', claude: 'Claude' }
 
@@ -62,10 +74,29 @@ export const externalLabel = (name: string, cfg: ExternalAgent): string => {
   return name === cfg.cli || name === product.toLowerCase() ? product : `${product} · ${name}`
 }
 
-/** What the task adds for this CLI: Antigravity safe has no terminal, and gives up unless told so. */
+/** The worker contract every Antigravity task carries (skills/external-delegation/SKILL.md explains it to the
+ *  master). Headless agy has no one to answer it: shell commands and questions are refused, and a turn
+ *  that ends without a final message reaches the master as an empty result. */
+export const AGY_WORKER_BRIEF = [
+  'You are a worker agent under a master reviewer who will verify everything you report. Work alone: nobody can answer you.',
+  'Rules:',
+  '- Stay inside the working directory and the paths the task names. Do not touch lockfiles, generated output or global configuration unless the task asks for it.',
+  '- You have no terminal: every shell command is denied, so do not try any. Use your file tools: view_file, list_dir, find_by_name, grep_search to read; replace_file_content, multi_replace_file_content, write_to_file to edit.',
+  '- Do not ask questions (ask_question is never answered). When something is ambiguous, pick the most conservative option and record the assumption.',
+  '- Do not commit, push, merge, delete branches or remove the worktree. Do not delegate to other agents.',
+  '- Never claim that tests, builds or commands passed: you cannot run them. Write the exact commands the master should run instead.',
+  '- Always finish with a final message in this shape, even when you did nothing:',
+  '  ## Result: what you did, or why you stopped',
+  '  ## Files: each file changed or read, one line each',
+  '  ## Verify: the commands and checks the master should run',
+  '  ## Assumptions and risks',
+  '  ## Pending: what is left, or "nothing"',
+].join('\n')
+
+/** What the task adds for this CLI: Antigravity gets its worker contract; read tasks may not edit. */
 export const externalTaskNote = (cfg: ExternalAgent, mode: 'edit' | 'read'): string =>
-  cfg.cli === 'agy' && mode === 'edit'
-    ? ' You have no terminal: every shell command is denied, so do not try any. Use only your file tools (view_file, replace_file_content, write_to_file).'
+  cfg.cli === 'agy'
+    ? `\n\n${AGY_WORKER_BRIEF}${mode === 'read' ? '\n- This is a read-only task: do not create or edit any file.' : ''}`
     : ''
 
 export function externalArgv(cfg: ExternalAgent, prompt: string, cwd: string, mode: 'edit' | 'read', reported?: string): string[] {
@@ -75,7 +106,10 @@ export function externalArgv(cfg: ExternalAgent, prompt: string, cwd: string, mo
   if (cfg.cli === 'codex') return ['codex', 'exec', '--json', '--sandbox', mode === 'edit' ? 'workspace-write' : 'read-only',
     '--skip-git-repo-check', '-c', 'sandbox_workspace_write.exclude_slash_tmp=true', '-c', 'sandbox_workspace_write.exclude_tmpdir_env_var=false',
     '-C', cwd, ...model, ...(session ? ['resume', session, prompt] : [prompt])]
-  if (cfg.cli === 'agy') return ['agy', '-p', prompt, '--output-format', 'stream-json', '--mode', mode === 'read' ? 'plan' : 'accept-edits', ...model, ...(session ? ['--conversation', session] : [])]
+  // --add-dir: headless agy denies every path outside its workspace and does not adopt the process cwd
+  // on its own; --disable-slash-commands: a task that starts with "/" is a task, not a command
+  if (cfg.cli === 'agy') return ['agy', '-p', prompt, '--output-format', 'stream-json', '--mode', mode === 'read' ? 'plan' : 'accept-edits',
+    '--add-dir', cwd, '--disable-slash-commands', ...model, ...(session ? ['--conversation', session] : [])]
   return ['claude', '-p', prompt, '--output-format', 'stream-json', '--verbose', '--permission-mode', mode === 'read' ? 'plan' : 'acceptEdits', ...model,
     '--settings', CLAUDE_SANDBOX,
     ...(session ? ['--resume', session] : []), '--allowedTools', 'Read', 'Glob', 'Grep', 'TaskCreate', 'TaskUpdate', ...(mode === 'edit' ? ['Edit', 'Write', ...(cfg.allow ?? [])] : [])]
@@ -160,7 +194,7 @@ export function externalParser(cli: ExternalCli): (line: string) => ExtEvent[] {
             const error = obj(info['error']) ? text(info['error']['message']) : ''
             const denied = /denied|not permitted|permission/i.test(text(info['output']) + error)
             tool(id, 'end', name, args, step['state'] !== 'ERROR' && !denied && !error)
-            if (denied) out.push({ kind: 'denied', tool: normalized(name, args).name, arg: text(args['CommandLine']) })
+            if (denied) out.push({ kind: 'denied', tool: normalized(name, args).name, arg: text(args['CommandLine'] ?? args['AbsolutePath'] ?? args['TargetFile'] ?? args['DirectoryPath']) })
           }
         }
         if (step['step_type'] === 'agent_response' && text(step['text_delta']).trim()) out.push({ kind: 'text', text: text(step['text_delta']) })
@@ -169,7 +203,7 @@ export function externalParser(cli: ExternalCli): (line: string) => ExtEvent[] {
       if (o['event'] === 'result' && obj(r) && !finalSeen) {
         finalSeen = true
         session(r['conversation_id']); usage(r['usage'])
-        for (const denied of Array.isArray(r['denied_actions']) ? r['denied_actions'] : []) out.push({ kind: 'denied', tool: obj(denied) ? normalized(text(denied['tool_name'] ?? denied['tool'] ?? denied['display_name']), {}).name : 'tool', arg: obj(denied) ? text(denied['reason'] ?? denied['command']) : text(denied) })
+        for (const denied of Array.isArray(r['denied_actions']) ? r['denied_actions'] : []) out.push({ kind: 'denied', tool: obj(denied) ? normalized(text(denied['tool_name'] ?? denied['tool'] ?? denied['display_name']), {}).name : 'tool', arg: obj(denied) ? text(denied['reason'] ?? denied['command'] ?? denied['action']) : text(denied) })
         out.push({ kind: 'done', result: text(r['response'] ?? r['error']), ok: r['status'] === 'SUCCESS' })
       }
     } else {
