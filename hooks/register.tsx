@@ -16,8 +16,9 @@ import type { Usage } from '../src/price.ts'
 import { BUILTIN } from '../src/builtin.ts'
 import { MASTER, direct, emptyDirector, playOf, type Director } from '../src/director.ts'
 import { loadPack } from '../src/fit.ts'
+import { buildFlowGraph, tierConnectors, type FlowDirection, type FlowNode } from '../src/flow.ts'
 import { normalizeDesignJson } from '../src/legacy.ts'
-import { PERSON_DECIDES, onResume, onExternal, describeInput, emptyState, onComplete, onMasterTool, onMeasure, onPermissionAnswer, onPermissionAsk, onReceive, onSend, onSpawn, onStep, onToolEnd, onToolStart, onUsage, parseStep, resolveTarget, statusReport, stepReceipt, type Limit } from '../src/model.ts'
+import { AGENT_ROLES, PERSON_DECIDES, onResume, onExternal, describeInput, emptyState, onComplete, onMasterTool, onMeasure, onPermissionAnswer, onPermissionAsk, onReceive, onSend, onSpawn, onStep, onToolEnd, onToolStart, onUsage, parseStep, resolveTarget, statusReport, stepReceipt, type Limit } from '../src/model.ts'
 import type { AgentRec, BusState, Completion, SpawnInfo } from '../src/model.ts'
 import { BUILTIN_ORIGIN, bundle, type DesignFile, type Pack } from '../src/pack.ts'
 import { FILTERS, TABS, detailModel, fallbackLines, filterTab, formatCostumeRulesText, listModel, newRules, previewMood, tellPrompt, panelAgents, transcriptLines, wardrobeModel, type AgentView, type Filter, type TxLine, type TxTab, type RulePart, type WardrobeCostumeView, type WardrobeRuleView } from '../src/panel.ts'
@@ -48,12 +49,14 @@ const showAll = atom({ plugin: 'crabbus', key: 'showAll' } as const, false)
 const OPEN0: Record<string, boolean> = {
   metrics: true, deleg: true, subs: true, act: true, details: true, dCost: false, dTok: false, dCtx: true, dTime: false, dTools: false, dTasks: true,
   wdGrid: true, wdMine: true, wdBuilt: false, wdProblems: true, wdManual: false,
+  flowTopo: true, flowChans: true,
 }
 const openSecs = atom({ plugin: 'crabbus', key: 'open' } as const, OPEN0)
 const filterAtom = atom({ plugin: 'crabbus', key: 'filter' } as const, 'all' as Filter)
 const modeAtom = atom({ plugin: 'crabbus', key: 'mode' } as const, 'cards' as 'cards' | 'rows')
 const tabAtom = atom({ plugin: 'crabbus', key: 'tab' } as const, 'all' as TxTab)
-const viewAtom = atom({ plugin: 'crabbus', key: 'view' } as const, 'agents' as 'agents' | 'wardrobe')
+const viewAtom = atom({ plugin: 'crabbus', key: 'view' } as const, 'agents' as 'agents' | 'flow' | 'wardrobe')
+const flowDirAtom = atom({ plugin: 'crabbus', key: 'flowDir' } as const, 'td' as FlowDirection)
 // the wardrobe: the costume picked in the grid, and what a new rule looks at
 const wdSel = atom({ plugin: 'crabbus', key: 'wdSel' } as const, null as string | null)
 const wdPage = atom({ plugin: 'crabbus', key: 'wdPage' } as const, 0)
@@ -62,10 +65,10 @@ const wdCrit = atom({ plugin: 'crabbus', key: 'wdCrit' } as const, 'description'
 // each agent's transcript, read at most once a second while its detail is shown
 const txCache = new Map<string, { at: number; lines: TxLine[] | null }>()
 
-// ~140 tokens added once to each subagent's prompt. It is what makes `declared` progress exist at all.
+// ~155 tokens added once to each subagent's prompt. It is what makes `declared` progress exist at all.
 const BRIEF = `
 
-Progress reporting (CrabBus): call mcp__crabbus__bus_step first with plan (3-8 short stages) and done:0, and again as each stage finishes (done = stages completed, current = what you do now; evidence:[{stage,proof}] only for facts you can show, e.g. a passing test). Report blocker:"..." when stuck, question:"..." when you need the master. If a message from the master arrives, call bus_step with ack:true, and applied:true plus a short note once you have acted on it. Never claim a stage you have not finished.`
+Progress reporting (CrabBus): call mcp__crabbus__bus_step first with plan (3-8 short stages), done:0, and optional role ("worker"|"verifier"|"lead"|"critic") or next (downstream agent names/ids you hand off to), and again as each stage finishes (done = stages completed, current = what you do now; evidence:[{stage,proof}] only for facts you can show, e.g. a passing test). Report blocker:"..." when stuck, question:"..." when you need the master. If a message arrives, call bus_step with ack:true, and applied:true plus a short note once you have acted on it. Never claim a stage you have not finished.`
 
 // Animation state lives in the module: it is redrawn from scratch after a reload, nothing to keep.
 let clock: { cancel: () => void } | undefined
@@ -73,7 +76,7 @@ let frame = 0
 type DrawSurface = 'terminal' | 'desktop'
 type PaneCrab = { key: string; id: string; i: number; mini: boolean; bg?: number; costume?: { id: string; isMaster: boolean; active: boolean } }
 const bands = new Map<DrawSurface, { site: string; columns: number; maxRows: number }>()
-const panes = new Map<DrawSurface, { site: string; crabs: PaneCrab[]; view: 'list' | 'detail' | 'wardrobe' }>()
+const panes = new Map<DrawSurface, { site: string; crabs: PaneCrab[]; view: 'list' | 'detail' | 'flow' | 'wardrobe' }>()
 let lastDesktopRefresh = 0
 let lastDesignCheck = 0
 const clientFaults = new Set<string>()
@@ -854,7 +857,7 @@ export const register: Register = (on, options) => {
     }
     await $.tool.register({
       name: 'bus_step',
-      description: 'For subagents: report your plan and progress to the master (plan, done, current, note, evidence, blocker, question, reply, ack, applied). Cheap; it only records state.',
+      description: 'For subagents: report your plan, topology role, and progress to the master (plan, done, current, note, evidence, blocker, question, reply, ack, applied, role, next). Cheap; it only records state.',
       isDeferred: false,
       inputSchema: {
         type: 'object',
@@ -870,6 +873,8 @@ export const register: Register = (on, options) => {
           reply: { type: 'string', description: 'Answer to a question the master sent you.' },
           ack: { type: 'boolean', description: 'You read a message from the master.' },
           applied: { type: 'boolean', description: 'You acted on a message from the master.' },
+          role: { type: 'string', enum: [...AGENT_ROLES], description: 'Your architectural role in the topology (orchestrator, lead, worker, verifier, critic).' },
+          next: { type: 'array', items: { type: 'string' }, description: 'Downstream agent names or ids that receive your output in the pipeline.' },
         },
       },
     })
@@ -889,15 +894,17 @@ export const register: Register = (on, options) => {
   })
 
   on('command.run', { command: 'bus' }, async ($, e) => {
-    if (typeof e.args === 'string' && e.args.trim() === 'clean') {
+    const sub = typeof e.args === 'string' ? e.args.trim() : ''
+    if (sub === 'clean') {
       const cleaned = await gcWorktrees($, undefined, true)
       return { text: cleaned.length ? `Pruned ${cleaned.length} worktree(s): ${cleaned.join(', ')}` : 'No stale worktrees to clean.' }
     }
     autoOpened = true
-    await update($, viewAtom, () => 'agents')
+    const targetView = sub === 'flow' ? 'flow' : sub === 'wardrobe' ? 'wardrobe' : 'agents'
+    await update($, viewAtom, () => targetView)
     const r = await $.ui.open({ id: PANE, title: TEXT.paneTitle, focus: true, columns: PANE_COLUMNS })
     ensureClock($, frameMs, still)
-    return { text: r.isPlaced ? TEXT.paneOpened : TEXT.paneWaiting(r.reason ?? '') }
+    return { text: r.isPlaced ? (targetView === 'flow' ? TEXT.flowOpened : TEXT.paneOpened) : TEXT.paneWaiting(r.reason ?? '') }
   })
 
   on('command.run', { command: 'costume' }, ($, e) => runCostumeCommand($, e.args, frameMs, still))
@@ -918,6 +925,7 @@ export const register: Register = (on, options) => {
       const matched = classifyDeterministic(pack.kinds, fullText)
       const original = canonicalId(e.resume?.agentId ?? started.agentId)!
       if (original !== started.agentId) aliases.set(started.agentId, original)
+      const parentId = canonicalId(e.parentAgentId)
       const info: SpawnInfo = {
         id: original,
         type: e.subagentType,
@@ -927,6 +935,8 @@ export const register: Register = (on, options) => {
         ...(e.permissionMode ? { mode: e.permissionMode } : {}),
         prompt: e.prompt,
         ...(matched ? { kind: matched.kind } : {}),
+        ...(parentId ? { parentId } : {}),
+        ...(e.isTeammate ? { isTeammate: true } : {}),
       }
       await record($, (s, t) => e.resume ? onResume(onSpawn(s, info, t, pack), original, t) : onSpawn(s, info, t, pack))
       ensureClock($, frameMs, still)
@@ -1008,16 +1018,15 @@ export const register: Register = (on, options) => {
     return { result: designs ? `${report}\n\n${designs}` : report }
   })
 
-  // SendMessage from the master: observed as it leaves, with whether the harness accepted it.
+  // SendMessage from the master or between subagents: observed as it leaves, with sender and delivery state.
   on('session.send', async ($, e, next) => {
     const sent = await next(e)
-    if (e.agentId === undefined) {
-      try {
-        await record($, (s, t) => onSend(s, resolveTarget(s, e.to) ?? e.to, e.text, sent.isDelivered === true, t))
-        ensureClock($, frameMs, still)
-      } catch {
-        /* observation only */
-      }
+    try {
+      const from = canonicalId(e.agentId)
+      await record($, (s, t) => onSend(s, resolveTarget(s, e.to) ?? e.to, e.text, sent.isDelivered === true, t, from))
+      ensureClock($, frameMs, still)
+    } catch {
+      /* observation only */
     }
     return sent
   }).catch(($, e, next) => next(e))
@@ -1210,10 +1219,10 @@ export const register: Register = (on, options) => {
   // cards or rows and live activity; or one agent in detail with its transcript, a message field and
   // its figures. The body scrolls, so every section is drawn and the person folds what they skip.
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const [s, t, sel, all, open0, filter, mode, tab, view] = [
+    const [s, t, sel, all, open0, filter, mode, tab, view, flowDir] = [
       await read($, bus), await $.clock.now(), await read($, selected), await read($, showAll),
       await read($, openSecs), await read($, filterAtom), await read($, modeAtom), await read($, tabAtom),
-      await read($, viewAtom),
+      await read($, viewAtom), (await read($, flowDirAtom)) ?? ('td' as FlowDirection),
     ]
     if (e.surface !== 'terminal' && e.surface !== 'desktop') {
       const { Text: Plain } = $.ui.resolve(e)
@@ -1227,7 +1236,7 @@ export const register: Register = (on, options) => {
     const open = { ...OPEN0, ...(open0 ?? {}) }
     const W = Math.max(30, e.props.bodyColumns)
     const crabs: PaneCrab[] = []
-    let paneView: 'list' | 'detail' | 'wardrobe' = 'list'
+    let paneView: 'list' | 'detail' | 'flow' | 'wardrobe' = 'list'
     panes.set(e.surface, { site: e.requestId, crabs, view: paneView })
     // Terminal crabs blit between redraws; Desktop Clients request the same frames.
     const crab = (key: string, id: string, i: number, mini = false, bg?: number) => {
@@ -1262,14 +1271,18 @@ export const register: Register = (on, options) => {
         <Text wrap="truncate-end" color={hex(rightColor)}>{right}</Text>
       </Box>
     )
-    // the two views of the pane, as tabs on a row of their own at the top: a = agents, w = wardrobe
-    const viewTabs = (current: 'agents' | 'wardrobe') => (
+    // the three views of the pane, as tabs on a row of their own at the top: a = agents, f = flow, w = wardrobe
+    const viewTabs = (current: 'agents' | 'flow' | 'wardrobe') => (
       <Box key="view-tabs" flexDirection="row" gap={1}>
-        {(['agents', 'wardrobe'] as const).map(v => (
-          <Button key={`view-${v}`} plain={desktop ? undefined : true} hotkey={v === 'agents' ? 'a' : 'w'} onPress={() => void update($, viewAtom, () => v).then(toTop)}>
-            <Text bold={v === current} color={hex(v === current ? C.text : C.dim)} {...(v === current ? { backgroundColor: hex(C.chip) } : {})}>{` ${v === 'agents' ? TEXT.tabAgents : TEXT.tabWardrobe} `}</Text>
-          </Button>
-        ))}
+        {(['agents', 'flow', 'wardrobe'] as const).map(v => {
+          const hk = v === 'agents' ? 'a' : v === 'flow' ? 'f' : 'w'
+          const lbl = v === 'agents' ? TEXT.tabAgents : v === 'flow' ? TEXT.tabFlow : TEXT.tabWardrobe
+          return (
+            <Button key={`view-${v}`} plain={desktop ? undefined : true} hotkey={hk} onPress={() => void update($, selected, () => null).then(() => update($, viewAtom, () => v)).then(toTop)}>
+              <Text bold={v === current} color={hex(v === current ? C.text : C.dim)} {...(v === current ? { backgroundColor: hex(C.chip) } : {})}>{` ${lbl} `}</Text>
+            </Button>
+          )
+        })}
       </Box>
     )
     // the state chip never wraps: in a narrow panel it keeps only its glyph
@@ -1801,6 +1814,193 @@ export const register: Register = (on, options) => {
           <Box flexDirection="row" gap={1} marginTop={1}>
             <Button key="tabkey" hotkey="t" plain onPress={() => void update($, tabAtom, x => TABS[(TABS.indexOf(x ?? 'all') + 1) % TABS.length] as TxTab)}>tab</Button>
             {!desktop && <Text color={hex(C.faint)} wrap="truncate-end">{TEXT.detailHints}</Text>}
+          </Box>
+        </Box>
+      )
+    } else if (view === 'flow') {
+      // ---- the topology & communication flow view (top-down by default, or left-to-right n8n pipeline)
+      paneView = 'flow'
+      const g = buildFlowGraph(s, t, pack, all === true)
+      const dir = flowDir === 'lr' ? 'lr' : 'td'
+      const flipDir = () => void update($, flowDirAtom, d => (d === 'lr' ? 'td' : 'lr'))
+
+      // Render a single node card with its animated crab, role badge, status chip, progress, and message counters.
+      // Keep full-size crabs (18x14, mini=false) whenever 1-2 nodes share a tier or the panel is wide; only shrink when 3+ share a narrow row.
+      const renderFlowNode = (node: FlowNode, idx: number, tierCount: number) => {
+        const useMini = !desktop && (dir === 'lr' || (tierCount >= 3 && W < 64))
+        const bg = cardBg(node.st)
+        const borderC = node.inFlightIn > 0 || node.inFlightOut > 0 ? C.yellow : desktop ? C.edgeHi : cardEdge(node.st)
+        const cardW = dir === 'lr'
+          ? (desktop ? 22 : Math.max(20, Math.floor((W - 6) / Math.max(1, Math.min(3, g.tiers.length)))))
+          : tierCount === 1
+            ? (desktop ? '100%' : Math.min(W - 2, Math.max(34, W - 4)))
+            : tierCount === 2
+              ? (desktop ? '48%' : Math.max(22, Math.floor((W - 3) / 2)))
+              : (desktop ? '31%' : Math.max(16, Math.floor((W - 4) / Math.min(3, tierCount))))
+        const onNodePress = node.id ? select(node.id) : () => void update($, viewAtom, () => 'agents').then(toTop)
+        const hk = idx > 0 && idx <= 9 ? String(idx) : undefined
+        return (
+          <Box
+            key={`fn-${node.id || 'master'}`}
+            flexDirection="column"
+            width={cardW}
+            borderStyle={node.inFlightIn > 0 || node.inFlightOut > 0 ? 'bold' : 'round'}
+            borderColor={hex(borderC)}
+            backgroundColor={hex(bg)}
+            paddingX={1}
+            hover={{ borderColor: hex(C.mint) }}
+          >
+            <Box flexDirection="row" gap={1} alignItems="center">
+              {crab(`fl-${node.id || 'master'}`, node.id, idx, useMini, bg)}
+              <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
+                <Box flexDirection="row" gap={1} alignItems="center" flexWrap="wrap">
+                  <Button key={`fn-btn-${node.id || 'master'}`} plain {...(hk ? { hotkey: hk } : {})} onPress={onNodePress}>
+                    <Text bold wrap="truncate-end" color={hex(node.color)}>{node.name}</Text>
+                  </Button>
+                  {chip(node.st, true)}
+                </Box>
+                <Text wrap="truncate-end">
+                  <Text bold color={hex(node.roleColor)} backgroundColor={hex(C.chip)}>{` ${node.roleBadge} `}</Text>
+                  {node.isTeammate ? <Text color={hex(C.peach)}> ⇄ peer</Text> : ''}
+                </Text>
+                <Text wrap="truncate-end" color={hex(C.text)}>
+                  <Text color={hex(node.st === 'working' ? C.mint : C.dim)}>⏺ </Text>
+                  {fit(node.tool, 20)}
+                </Text>
+                <Text wrap="truncate-end" color={hex(C.dim)}>
+                  {node.bar ? <Text color={hex(ST[node.st].c)}>{`${node.bar} `}</Text> : ''}
+                  <Text color={hex(C.yellow)}>{node.progTxt}</Text>
+                  <Text color={hex(C.faint)}>{` · ${node.agoTxt}`}</Text>
+                </Text>
+                {(node.msgCountIn > 0 || node.msgCountOut > 0) && (
+                  <Text wrap="truncate-end" color={hex(node.inFlightIn > 0 || node.inFlightOut > 0 ? C.yellow : C.cyan)}>
+                    {`✉ ↓${node.msgCountIn} ↑${node.msgCountOut}${node.inFlightIn > 0 ? ' · in transit' : ''}`}
+                  </Text>
+                )}
+              </Box>
+            </Box>
+          </Box>
+        )
+      }
+
+      let nodeIdx = 0
+      body = (
+        <Box flexDirection="column">
+          {viewTabs('flow')}
+          {rule('fl-r0')}
+
+          <Box flexDirection="row" alignItems="center" gap={1}>
+            <Text bold color={hex(C.mint)}>❖ {g.patternLabel}</Text>
+            <Box flexGrow={1} />
+            <Button key="flow-dir" hotkey="d" plain={desktop ? undefined : true} onPress={flipDir}>
+              <Text bold color={hex(C.cyan)} backgroundColor={hex(C.chip)}>{` ${dir === 'td' ? TEXT.dirTopDown : TEXT.dirLeftRight} `}</Text>
+            </Button>
+          </Box>
+          <Text wrap="wrap" color={hex(C.dim)}>{g.patternDesc}</Text>
+          <Box flexDirection="row" flexWrap="wrap" columnGap={2} marginTop={0}>
+            <Text color={hex(C.dim)}>nodes: <Text bold color={hex(C.text)}>{g.nodes.length}</Text></Text>
+            <Text color={hex(C.dim)}>tiers: <Text bold color={hex(C.text)}>{g.tiers.length}</Text></Text>
+            <Text color={hex(C.dim)}>messages: <Text bold color={hex(C.cyan)}>{g.totalMsgs}</Text></Text>
+            {g.flyingCount > 0 && <Text bold color={hex(C.yellow)}>{TEXT.msgsInFlight(g.flyingCount)}</Text>}
+            {g.unappliedCount > 0 && <Text color={hex(C.peach)}>{TEXT.msgsUnapplied(g.unappliedCount)}</Text>}
+          </Box>
+          {rule('fl-r1')}
+
+          {section('flowTopo', TEXT.secTopology, dir === 'td' ? 'top → down' : 'left → right', C.mint)}
+          {open['flowTopo'] !== false && (
+            dir === 'td' ? (
+              <Box flexDirection="column" width="100%">
+                {g.tiers.map((tier, tIdx) => {
+                  const nextTier = g.tiers[tIdx + 1]
+                  const conn = nextTier ? tierConnectors(g, tier, nextTier, W) : undefined
+                  const tierIds = new Set(tier.nodes.map(n => n.id))
+                  const peerEdges = g.edges.filter(ed => ed.kind === 'peer' && tierIds.has(ed.from) && tierIds.has(ed.to))
+                  return (
+                    <Box key={`tier-${tier.tier}`} flexDirection="column" width="100%" marginTop={tIdx === 0 ? 0 : 0}>
+                      <Text bold color={hex(C.faint)}>{tier.label}</Text>
+                      <Box flexDirection="row" flexWrap="wrap" gap={1} justifyContent="center" width="100%">
+                        {tier.nodes.map(n => renderFlowNode(n, nodeIdx++, tier.nodes.length))}
+                      </Box>
+                      {peerEdges.length > 0 && (
+                        <Box flexDirection="column" alignItems="center">
+                          {peerEdges.map(pe => (
+                            <Text key={`pe-${pe.id}`} wrap="truncate-end" color={hex(pe.inFlight ? C.yellow : C.peach)}>
+                              {`⇄ peer channel: ${pe.fromName} ──✉ (×${pe.msgCount})──► ${pe.toName}${pe.lastText ? ` "${fit(pe.lastText, 22)}"` : ''}`}
+                            </Text>
+                          ))}
+                        </Box>
+                      )}
+                      {conn && (
+                        <Box flexDirection="column" width="100%">
+                          {conn.lines.map((ln, lIdx) => (
+                            <Text key={`cn-${tier.tier}-${lIdx}`} wrap="truncate-end" color={hex(conn.color)}>{ln}</Text>
+                          ))}
+                          {conn.activeMsg && (
+                            <Text bold wrap="truncate-end" color={hex(conn.color)}>{`  ${conn.activeMsg}`}</Text>
+                          )}
+                        </Box>
+                      )}
+                    </Box>
+                  )
+                })}
+                {g.hasFeedbackLoop && g.feedbackText && (
+                  <Box flexDirection="row" borderStyle="round" borderColor={hex(C.mint)} backgroundColor={hex(C.chip)} paddingX={1} marginTop={1}>
+                    <Text bold wrap="wrap" color={hex(C.mint)}>{g.feedbackText}</Text>
+                  </Box>
+                )}
+              </Box>
+            ) : (
+              // Left-to-Right (n8n pipeline layout): tiers arranged horizontally with ──► connectors between columns
+              <Box flexDirection="column" width="100%">
+                <Box flexDirection="row" flexWrap="wrap" alignItems="center" gap={1} width="100%">
+                  {g.tiers.map((tier, tIdx) => (
+                    <Box key={`lr-tier-${tier.tier}`} flexDirection="row" alignItems="center" gap={1}>
+                      <Box flexDirection="column" gap={1}>
+                        <Text bold color={hex(C.faint)}>{`T${tier.tier} (${tier.nodes.length})`}</Text>
+                        {tier.nodes.map(n => renderFlowNode(n, nodeIdx++, tier.nodes.length))}
+                      </Box>
+                      {tIdx < g.tiers.length - 1 && (
+                        <Box flexDirection="column" justifyContent="center" alignItems="center" paddingX={0}>
+                          <Text bold color={hex(g.flyingCount > 0 ? C.yellow : C.cyan)}>{g.flyingCount > 0 ? '─✉►' : '──►'}</Text>
+                        </Box>
+                      )}
+                    </Box>
+                  ))}
+                </Box>
+                {g.hasFeedbackLoop && g.feedbackText && (
+                  <Box flexDirection="row" borderStyle="round" borderColor={hex(C.mint)} backgroundColor={hex(C.chip)} paddingX={1} marginTop={1}>
+                    <Text bold wrap="wrap" color={hex(C.mint)}>{g.feedbackText}</Text>
+                  </Box>
+                )}
+              </Box>
+            )
+          )}
+
+          {rule('fl-r2')}
+          {section('flowChans', TEXT.secChannels, String(g.channels.length), g.flyingCount > 0 ? C.yellow : C.cyan)}
+          {open['flowChans'] !== false && (
+            <Box flexDirection="column" borderStyle="round" borderColor={hex(C.edgeHi)} backgroundColor={hex(CARD_BG)} paddingX={1}>
+              {g.channels.length === 0 && <Text wrap="wrap" color={hex(C.faint)}>{TEXT.noChannelsYet}</Text>}
+              {g.channels.map(chEdge => {
+                const badge = chEdge.inFlight ? '✉ in transit' : chEdge.kind === 'feedback' ? '↺ feedback' : chEdge.kind === 'peer' ? '⇄ peer' : chEdge.msgCount > 0 ? `✓ ×${chEdge.msgCount}` : '→ pipeline'
+                return (
+                  <Box key={`ch-${chEdge.id}`} flexDirection="column" marginTop={1}>
+                    <Box flexDirection="row" gap={1} flexWrap="wrap">
+                      <Text bold color={hex(chEdge.color)}>{`${chEdge.fromName} ──► ${chEdge.toName}`}</Text>
+                      <Text color={hex(chEdge.color)} backgroundColor={hex(C.chip)}>{` ${badge} `}</Text>
+                      {chEdge.agoTxt && <Text color={hex(C.faint)}>{chEdge.agoTxt}</Text>}
+                    </Box>
+                    {chEdge.lastText && (
+                      <Text wrap="truncate-end" color={hex(C.dim)}>{`  “${chEdge.lastText}”`}</Text>
+                    )}
+                  </Box>
+                )
+              })}
+            </Box>
+          )}
+
+          <Box flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1}>
+            {!desktop && <Text color={hex(C.faint)} wrap="truncate-end">{TEXT.flowHints}</Text>}
           </Box>
         </Box>
       )

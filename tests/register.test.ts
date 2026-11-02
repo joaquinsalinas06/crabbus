@@ -361,6 +361,14 @@ for (const surface of ['terminal', 'desktop'] as const) describe(`crabbus (${sur
     // back to the agents
     await ui.press({ key: 'view-agents' })
     await drawn(/METRICS/i)
+    // the middle tab opens the topology flow view (top-down by default, with direction toggle)
+    await ui.press({ key: 'view-flow' })
+    await drawn(/TOPOLOGY/i)
+    await drawn(/CHANNELS & MESSAGES/i)
+    await ui.press({ key: 'flow-dir' })
+    await drawn(/left-right/)
+    await ui.press({ key: 'flow-dir' })
+    await drawn(/top-down/)
     // and the tab row takes the person back to the wardrobe without a command
     await ui.press({ key: 'view-wardrobe' })
     await drawn(/COSTUMES/i)

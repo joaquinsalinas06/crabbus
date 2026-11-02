@@ -13,6 +13,10 @@ declare module 'claude-code' {
           {
             id: string
             ext?: { cli: 'codex' | 'agy' | 'claude'; profile: string; label?: string; session?: string; worktree?: string; branch?: string }
+            parentId?: string
+            isTeammate?: boolean
+            role?: 'orchestrator' | 'lead' | 'worker' | 'verifier' | 'critic'
+            next?: string[]
             type: string
             description: string
             name?: string
@@ -54,7 +58,7 @@ declare module 'claude-code' {
             replies: string[]
           }
         >
-        msgs: { id: string; to: string; text: string; sentAt: number; accepted: boolean; receivedAt?: number; ackedAt?: number; appliedAt?: number; ackNote?: string }[]
+        msgs: { id: string; from?: string; to: string; text: string; sentAt: number; accepted: boolean; receivedAt?: number; ackedAt?: number; appliedAt?: number; ackNote?: string }[]
         seq: number
         activity?: { at: number; id: string; st: 'working' | 'thinking' | 'waiting' | 'blocked' | 'done' | 'failed'; text: string; g?: string }[]
         pending?: { id: string; agentId: string; tool: string; arg: string; at: number }[]
@@ -73,6 +77,7 @@ declare module 'claude-code' {
           ctxWindow?: number
           ctxPercent?: number
           costHist?: number[]
+          limits?: { kind: string; pct: number; resetsAt?: number }[]
         }
       }
       selected: string | null
@@ -82,7 +87,8 @@ declare module 'claude-code' {
       filter: 'all' | 'active' | 'attention' | 'done'
       mode: 'cards' | 'rows'
       tab: 'all' | 'tools' | 'reasoning'
-      view: 'agents' | 'wardrobe'
+      view: 'agents' | 'flow' | 'wardrobe'
+      flowDir: 'td' | 'lr'
       /** The costume picked in the wardrobe grid, and what a new rule looks at. */
       wdSel: string | null
       wdPage: number
