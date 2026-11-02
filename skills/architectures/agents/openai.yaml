@@ -1,0 +1,6 @@
+interface:
+  display_name: "CrabBus · Multi-Agent Architectures"
+  short_description: "Autonomously select and orchestrate multi-agent topologies and SendMessage channels"
+  default_prompt: "Use $architectures to autonomously choose the best subagent topology for this task and coordinate agents via SendMessage."
+policy:
+  allow_implicit_invocation: true
