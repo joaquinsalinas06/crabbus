@@ -112,10 +112,17 @@ export const inferNodeRole = (a: AgentRec, all: readonly AgentRec[]): NodeRole =
 const masterSt = (s: BusState): UiStatus =>
   s.session?.inTool ? 'working' : Object.values(s.agents).some(a => a.status === 'running') ? 'thinking' : 'done'
 
+const flowNodeTitle = (a: AgentRec): string => {
+  if (a.nickname) return clean(a.nickname)
+  // For external CLIs (where roleBadge already displays CODEX / ANTIGRAVITY), prefer the task description over the profile name "agy"/"codex"
+  const raw = a.ext ? (a.description || a.name || a.id) : (a.name && a.name !== a.type ? a.name : a.description || a.id)
+  return clean(raw.replace(/^(haiku|sonnet|opus)\s*:\s*/i, ''))
+}
+
 const nodeNameOf = (s: BusState, id: string): string => {
   if (!id || id === 'master') return 'master'
   const a = s.agents[id]
-  return a ? clean(shownName(a)) : id
+  return a ? flowNodeTitle(a) : id
 }
 
 const resolveNodeId = (s: BusState, ref: string): string => {
@@ -253,7 +260,7 @@ export const buildFlowGraph = (s: BusState, now: number, pack: Pack = BUILTIN, s
     const outMsgs = s.msgs.filter(m => m.accepted && m.from && resolveNodeId(s, m.from) === a.id)
     return {
       id: a.id,
-      name: clean(shownName(a)),
+      name: flowNodeTitle(a),
       role,
       roleBadge: a.ext ? (a.ext.cli === 'codex' ? 'CODEX' : a.ext.cli === 'agy' ? 'ANTIGRAVITY' : 'CLAUDE EXT') : meta.badge,
       roleColor: meta.color,
@@ -422,8 +429,9 @@ export const buildFlowGraph = (s: BusState, now: number, pack: Pack = BUILTIN, s
 }
 
 /**
- * Builds the Unicode connector lines between Tier `fromTier` (with `fromCount` nodes)
- * and Tier `toTier` (with `toCount` nodes) for Top-Down (`td`) view.
+ * Builds the Unicode connector lines between Tier `fromTier` and Tier `toTier` for Top-Down (`td`) view.
+ * Multi-node tiers are rendered in a 2-column grid, so connectors cleanly fork (1 -> 2 cols) or join (2 cols -> 1)
+ * around the center axis without overflowing or misaligning arrows.
  */
 export const tierConnectors = (
   g: FlowGraph,
@@ -431,8 +439,6 @@ export const tierConnectors = (
   toTier: FlowTier,
   width: number,
 ): { lines: string[]; activeMsg?: string; color: number } => {
-  const w = Math.max(20, Math.min(80, width - 4))
-  const mid = Math.max(2, Math.floor(w / 2))
   const fromIds = new Set(fromTier.nodes.map(n => n.id))
   const toIds = new Set(toTier.nodes.map(n => n.id))
   const tierEdges = g.edges.filter(e => fromIds.has(e.from) && toIds.has(e.to))
@@ -440,65 +446,50 @@ export const tierConnectors = (
   const withMsg = tierEdges.find(e => e.lastText)
   const color = inFlight ? C.yellow : withMsg ? C.cyan : C.dim
   const activeMsg = inFlight
-    ? `✉ in transit: ${inFlight.fromName} → ${inFlight.toName}${inFlight.lastText ? ` "${fit(inFlight.lastText, 24)}"` : ''}`
+    ? `✉ in transit: ${fit(inFlight.fromName, 14)} → ${fit(inFlight.toName, 14)}${inFlight.lastText ? ` "${fit(inFlight.lastText, 20)}"` : ''}`
     : withMsg && withMsg.msgCount > 0
-      ? `✉ ${withMsg.fromName} → ${withMsg.toName} (×${withMsg.msgCount})`
+      ? `✉ ${fit(withMsg.fromName, 14)} → ${fit(withMsg.toName, 14)} (×${withMsg.msgCount})`
       : undefined
 
-  const fN = fromTier.nodes.length
-  const tN = toTier.nodes.length
-  const span = Math.max(8, Math.min(w - 4, Math.max(fN, tN) * 14))
-  const half = Math.floor(span / 2)
+  const fCols = fromTier.nodes.length > 1 && width >= 44 ? 2 : 1
+  const tCols = toTier.nodes.length > 1 && width >= 44 ? 2 : 1
+  // Distance between left-column center (25%) and right-column center (75%) is half the panel width
+  const arm = Math.max(6, Math.min(18, Math.floor(Math.max(36, Math.min(72, width)) / 4)))
+  const bar = '─'.repeat(arm)
+  const pad = ' '.repeat(arm)
 
-  if (fN === 1 && tN === 1) {
-    const pad = ' '.repeat(mid)
-    return { lines: [`${pad}│`, `${pad}▼`], ...(activeMsg ? { activeMsg } : {}), color }
+  if (fCols === 1 && tCols === 1) {
+    return { lines: ['│', '▼'], ...(activeMsg ? { activeMsg } : {}), color }
   }
-  if (fN === 1 && tN > 1) {
-    // Fan-out: 1 -> N
-    const left = Math.max(2, mid - half)
-    const barW = Math.max(4, span)
-    const step = Math.max(2, Math.floor(barW / Math.max(1, tN - 1)))
-    let top = ''
-    let arrows = ''
-    for (let i = 0; i <= barW; i++) {
-      const isTap = i === 0 || i === barW || (tN > 2 && i % step === 0 && i < barW)
-      if (i === Math.floor(barW / 2)) top += isTap ? '┼' : '┴'
-      else if (i === 0) top += '┌'
-      else if (i === barW) top += '┐'
-      else top += isTap ? '┬' : '─'
-      arrows += isTap ? '▼' : ' '
-    }
+  if (fCols === 1 && tCols === 2) {
+    // Fan-out from 1 center node into 2 columns (left & right)
     return {
-      lines: [`${' '.repeat(mid)}│`, `${' '.repeat(left)}${top}`, `${' '.repeat(left)}${arrows}`],
+      lines: [
+        `${pad} │ ${pad}`,
+        `┌${bar}┴${bar}┐`,
+        `▼${pad}   ${pad}▼`,
+      ],
       ...(activeMsg ? { activeMsg } : {}),
       color,
     }
   }
-  if (fN > 1 && tN === 1) {
-    // Fan-in / Verifier gate: N -> 1
-    const left = Math.max(2, mid - half)
-    const barW = Math.max(4, span)
-    const step = Math.max(2, Math.floor(barW / Math.max(1, fN - 1)))
-    let bot = ''
-    for (let i = 0; i <= barW; i++) {
-      const isTap = i === 0 || i === barW || (fN > 2 && i % step === 0 && i < barW)
-      if (i === Math.floor(barW / 2)) bot += isTap ? '┼' : '┬'
-      else if (i === 0) bot += '└'
-      else if (i === barW) bot += '┘'
-      else bot += isTap ? '┴' : '─'
-    }
+  if (fCols === 2 && tCols === 1) {
+    // Fan-in from 2 columns into 1 center node (e.g. Verifier gate)
     return {
-      lines: [`${' '.repeat(left)}${bot}`, `${' '.repeat(mid)}▼`],
+      lines: [
+        `└${bar}┬${bar}┘`,
+        `${pad} ▼ ${pad}`,
+      ],
       ...(activeMsg ? { activeMsg } : {}),
       color,
     }
   }
-  // N -> M
-  const left = Math.max(2, mid - half)
-  const barW = Math.max(4, span)
+  // 2 columns -> 2 columns
   return {
-    lines: [`${' '.repeat(left)}├─${'─'.repeat(Math.max(1, barW - 2))}─┤`, `${' '.repeat(mid)}▼`],
+    lines: [
+      `├${bar}┼${bar}┤`,
+      `▼${pad}   ${pad}▼`,
+    ],
     ...(activeMsg ? { activeMsg } : {}),
     color,
   }
