@@ -880,7 +880,7 @@ export const register: Register = (on, options) => {
     })
     await $.tool.register({
       name: 'bus_status',
-      description: 'For the master: what every subagent is doing right now. Three layers per agent: OBSERVED (hooks), DECLARED (its own bus_step reports), VERIFIED (declared stages with evidence), plus message delivery. Address SendMessage by the agent id shown here. Optional agent filter (id, name or part of its description).',
+      description: 'For the master: what every subagent is doing right now. Three layers per agent: OBSERVED (hooks), DECLARED (its own bus_step reports), VERIFIED (declared stages with evidence), plus message delivery. Address SendMessage by the agent id shown here. Optional agent filter (id, name or part of its description). When spawning subagents or dividing a task, autonomously apply the architectures skill without asking the user which topology to use: pick Fan-Out, Orchestrator->Workers->Verifier, Hierarchical, or Peer Mesh based on the task, instruct subagents to pass role and next in bus_step, and steer them via SendMessage.',
       isDeferred: false,
       inputSchema: { type: 'object', properties: { agent: { type: 'string' } } },
     })

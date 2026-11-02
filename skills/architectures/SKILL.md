@@ -1,13 +1,17 @@
 ---
 name: architectures
-description: Orchestrate subagents using industry-standard multi-agent architectures (Fan-Out / Map-Reduce, Orchestrator -> Workers -> Verifier, Hierarchical Tree, Agent Teams Peer-to-Peer Mesh, Evaluator-Optimizer, Hybrid Multi-CLI) and inter-agent SendMessage channels, visualized live in the CrabBus flow tab. Use when spawning multiple subagents, coordinating parallel workers, adding a QA/Verifier gate, or setting up inter-agent communication.
+description: Autonomously select and orchestrate multi-agent architectures and SendMessage channels without requiring the user to name a pattern or invoke a command. Activate automatically whenever spawning subagents, dividing work, or when the user asks to use subagents or parallelize ("usa subagentes", "con subagentes", "divide la tarea", "hazlo en paralelo", "delega esto", "arma un equipo de agentes", "que varios agentes lo hagan", "encárgate con subagentes", "trabajen en equipo", "use subagents", "parallelize", "split the work", "delegate to agents", "multi-agent"). You decide the topology (Fan-Out, Orchestrator -> Workers -> Verifier, Hierarchical Tree, Peer Team Mesh, Evaluator-Optimizer, or Hybrid CLI) based on the task shape.
 ---
 
-# Multi-Agent Architectures & Communication Topologies
+# Autonomous Multi-Agent Orchestration & Topologies
 
-CrabBus renders your subagents and their live communication channels in the **`flow`** tab (`/bus flow` or hotkey `f` in the side panel, with `d` to toggle between **⇅ Top-Down** and **⇄ Left-to-Right** pipeline views).
+## Zero-Config Activation Rule (You Decide, Not the User)
 
-Whenever a task involves multiple files, parallel investigation, implementation + verification, or cross-domain work, select one of the six architectures below, wire your subagents with `role` and `next` in `bus_step`, and use `SendMessage` to coordinate them in real time.
+**Recognize context without requiring `@`, `/`, or architecture names.** The user does **not** need to know what a "Fan-Out", "Verifier Gate", or "Peer Mesh" is. Whenever a task benefits from subagents or the user asks to use subagents:
+
+1. **Do not ask the user which architecture to use.** Diagnose the task yourself using the Decision Matrix below and immediately pick the best topology.
+2. **Own the entire delegation lifecycle.** Partition the task, spawn the subagents with clear `name`s, instruct each one in its prompt to report its `role` and `next` in `mcp__crabbus__bus_step`, monitor them via `mcp__crabbus__bus_status`, and steer or connect them via `SendMessage`.
+3. **Keep the `flow` visualizer live.** CrabBus renders your chosen topology and every `SendMessage` channel in real time in the **`flow`** tab (`/bus flow` or hotkey `f`, with `d` to toggle between **⇅ Top-Down** and **⇄ Left-to-Right** pipeline views).
 
 ---
 

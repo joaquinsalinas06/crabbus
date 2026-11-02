@@ -29,8 +29,8 @@ const SPANISH_CHARS = /[áéíóúñÁÉÍÓÚÑ¿¡]/
 const SPANISH_WORDS = /\b(pieza|disfraz|accion|reglas|paquete|ranura|ancla|capas|dibujos|paleta|cuerpo|ojos|cabeza|espalda|mano|pinza|suelo|tarjeta|adorno|jugada|pase|recibe|etiqueta|cuando|herramienta|entrada|estado|prioridad|dura|efecto|atenuar|pasos|cada|periodo|fijo|oculto|salto|temblor|patas|brazoIzq|brazoDer|ancho|patada|azar|sale|activos|apodo|siLibre|textos|desde|hasta|tapaOjos|cubreAccion|ocupa|dormido|terminado|fallo|bloqueado|pensando|trabajando|inicio|gorro|bigote|lupa|casco|pico|corbata|antena|corona|sable|libro|lapiz|tubo|globo|llave|cruz|bandera|estrella|pelota|giro|futbol|maestro|disenar|cangrejo|carpeta|exportar|importar|recargar|lista|diseno|encaje|flota)\b/i
 
 function isWhitelistedLine(relPath: string, line: string): boolean {
-  // Bilingual trigger keywords in skills/design/SKILL.md frontmatter description
-  if (relPath === 'skills/design/SKILL.md' && line.startsWith('description:')) return true
+  // Bilingual trigger keywords in skills/*/SKILL.md frontmatter description
+  if ((relPath === 'skills/design/SKILL.md' || relPath === 'skills/architectures/SKILL.md') && line.startsWith('description:')) return true
   // Documented compatibility aliases in skills/design/SKILL.md, README.md, and DECISIONS.md
   if ((relPath === 'skills/design/SKILL.md' || relPath === 'README.md' || relPath === 'DECISIONS.md') && /(\/disfraz|--diseno|--disfraz|\.cangrejo\.json)/.test(line)) return true
   // Explicit legacy command/CLI alias lines in hooks/register.tsx and tools/preview.ts
