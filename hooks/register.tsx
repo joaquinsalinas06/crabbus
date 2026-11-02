@@ -1824,21 +1824,76 @@ export const register: Register = (on, options) => {
       const dir = flowDir === 'lr' ? 'lr' : 'td'
       const flipDir = () => void update($, flowDirAtom, d => (d === 'lr' ? 'td' : 'lr'))
 
-      // Render a single node card with its animated crab, role badge, status chip, progress, and message counters.
-      // Keep full-size crabs (18x14, mini=false) whenever 1-2 nodes share a tier or the panel is wide; only shrink when 3+ share a narrow row.
+      // Render a single node card with its full-size animated crab (18x14, never low-res mini),
+      // full-width top title header, role badge, status chip, progress, and message counters.
       const renderFlowNode = (node: FlowNode, idx: number, tierCount: number) => {
-        const useMini = !desktop && (dir === 'lr' || (tierCount >= 3 && W < 64))
         const bg = cardBg(node.st)
         const borderC = node.inFlightIn > 0 || node.inFlightOut > 0 ? C.yellow : desktop ? C.edgeHi : cardEdge(node.st)
+        const singleCol = dir === 'td' && (tierCount === 1 || W < 44)
+        const cardCols = dir === 'lr'
+          ? Math.max(22, Math.floor((W - 4) / 2))
+          : singleCol
+            ? W - 2
+            : Math.max(22, Math.floor((W - 3) / 2))
         const cardW = dir === 'lr'
-          ? (desktop ? 22 : Math.max(20, Math.floor((W - 6) / Math.max(1, Math.min(3, g.tiers.length)))))
-          : tierCount === 1
-            ? (desktop ? '100%' : Math.min(W - 2, Math.max(34, W - 4)))
-            : tierCount === 2
-              ? (desktop ? '48%' : Math.max(22, Math.floor((W - 3) / 2)))
-              : (desktop ? '31%' : Math.max(16, Math.floor((W - 4) / Math.min(3, tierCount))))
+          ? (desktop ? '48%' : cardCols)
+          : singleCol
+            ? (desktop ? '100%' : cardCols)
+            : (desktop ? '48%' : cardCols)
+        const innerCols = Math.max(18, cardCols - 4)
         const onNodePress = node.id ? select(node.id) : () => void update($, viewAtom, () => 'agents').then(toTop)
         const hk = idx > 0 && idx <= 9 ? String(idx) : undefined
+        const titleMax = Math.max(12, innerCols - 6)
+        const toolMax = Math.max(14, singleCol ? innerCols - CARD_W - 4 : innerCols - 3)
+
+        if (singleCol) {
+          // Full-width card (Tier 0 Master, single Worker, or single Verifier):
+          // Full-width title bar on top, then full-size crab on the left + details on the right.
+          return (
+            <Box
+              key={`fn-${node.id || 'master'}`}
+              flexDirection="column"
+              width={cardW}
+              borderStyle={node.inFlightIn > 0 || node.inFlightOut > 0 ? 'bold' : 'round'}
+              borderColor={hex(borderC)}
+              backgroundColor={hex(bg)}
+              paddingX={1}
+              hover={{ borderColor: hex(C.mint) }}
+            >
+              <Box flexDirection="row" width="100%" alignItems="center" justifyContent="space-between" gap={1}>
+                <Button key={`fn-btn-${node.id || 'master'}`} plain {...(hk ? { hotkey: hk } : {})} onPress={onNodePress}>
+                  <Text bold wrap="truncate-end" color={hex(node.color)}>{fit(node.name, titleMax)}</Text>
+                </Button>
+                {chip(node.st, true)}
+              </Box>
+              <Box flexDirection="row" gap={1} alignItems="center">
+                {crab(`fl-${node.id || 'master'}`, node.id, idx, false, bg)}
+                <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
+                  <Text wrap="truncate-end">
+                    <Text bold color={hex(node.roleColor)} backgroundColor={hex(C.chip)}>{` ${node.roleBadge} `}</Text>
+                    {node.isTeammate ? <Text color={hex(C.peach)}> ⇄ peer</Text> : ''}
+                  </Text>
+                  <Text wrap="truncate-end" color={hex(C.text)}>
+                    <Text color={hex(node.st === 'working' ? C.mint : C.dim)}>⏺ </Text>
+                    {fit(node.tool, toolMax)}
+                  </Text>
+                  <Text wrap="truncate-end" color={hex(C.dim)}>
+                    {node.bar ? <Text color={hex(ST[node.st].c)}>{`${node.bar} `}</Text> : ''}
+                    <Text color={hex(C.yellow)}>{node.progTxt}</Text>
+                    <Text color={hex(C.faint)}>{` · ${node.agoTxt}`}</Text>
+                  </Text>
+                  {(node.msgCountIn > 0 || node.msgCountOut > 0) && (
+                    <Text wrap="truncate-end" color={hex(node.inFlightIn > 0 || node.inFlightOut > 0 ? C.yellow : C.cyan)}>
+                      {`✉ ↓${node.msgCountIn} ↑${node.msgCountOut}${node.inFlightIn > 0 ? ' · in transit' : ''}`}
+                    </Text>
+                  )}
+                </Box>
+              </Box>
+            </Box>
+          )
+        }
+
+        // 2-column grid card: Title & Role across full card width at the top, full-size 18x14 crab centered, tool & stages across full width at the bottom.
         return (
           <Box
             key={`fn-${node.id || 'master'}`}
@@ -1850,35 +1905,34 @@ export const register: Register = (on, options) => {
             paddingX={1}
             hover={{ borderColor: hex(C.mint) }}
           >
-            <Box flexDirection="row" gap={1} alignItems="center">
-              {crab(`fl-${node.id || 'master'}`, node.id, idx, useMini, bg)}
-              <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
-                <Box flexDirection="row" gap={1} alignItems="center" flexWrap="wrap">
-                  <Button key={`fn-btn-${node.id || 'master'}`} plain {...(hk ? { hotkey: hk } : {})} onPress={onNodePress}>
-                    <Text bold wrap="truncate-end" color={hex(node.color)}>{node.name}</Text>
-                  </Button>
-                  {chip(node.st, true)}
-                </Box>
-                <Text wrap="truncate-end">
-                  <Text bold color={hex(node.roleColor)} backgroundColor={hex(C.chip)}>{` ${node.roleBadge} `}</Text>
-                  {node.isTeammate ? <Text color={hex(C.peach)}> ⇄ peer</Text> : ''}
-                </Text>
-                <Text wrap="truncate-end" color={hex(C.text)}>
-                  <Text color={hex(node.st === 'working' ? C.mint : C.dim)}>⏺ </Text>
-                  {fit(node.tool, 20)}
-                </Text>
-                <Text wrap="truncate-end" color={hex(C.dim)}>
-                  {node.bar ? <Text color={hex(ST[node.st].c)}>{`${node.bar} `}</Text> : ''}
-                  <Text color={hex(C.yellow)}>{node.progTxt}</Text>
-                  <Text color={hex(C.faint)}>{` · ${node.agoTxt}`}</Text>
-                </Text>
-                {(node.msgCountIn > 0 || node.msgCountOut > 0) && (
-                  <Text wrap="truncate-end" color={hex(node.inFlightIn > 0 || node.inFlightOut > 0 ? C.yellow : C.cyan)}>
-                    {`✉ ↓${node.msgCountIn} ↑${node.msgCountOut}${node.inFlightIn > 0 ? ' · in transit' : ''}`}
-                  </Text>
-                )}
-              </Box>
+            <Box flexDirection="row" width="100%" alignItems="center" justifyContent="space-between">
+              <Button key={`fn-btn-${node.id || 'master'}`} plain {...(hk ? { hotkey: hk } : {})} onPress={onNodePress}>
+                <Text bold wrap="truncate-end" color={hex(node.color)}>{fit(node.name, titleMax)}</Text>
+              </Button>
+              {chip(node.st, true)}
             </Box>
+            <Box flexDirection="row" width="100%" alignItems="center" justifyContent="space-between">
+              <Text wrap="truncate-end">
+                <Text bold color={hex(node.roleColor)} backgroundColor={hex(C.chip)}>{` ${node.roleBadge} `}</Text>
+                {node.isTeammate ? <Text color={hex(C.peach)}> ⇄</Text> : ''}
+              </Text>
+              <Text wrap="truncate-end" color={hex(C.dim)}>
+                <Text color={hex(C.yellow)}>{node.progTxt}</Text>
+                <Text color={hex(C.faint)}>{` · ${node.agoTxt}`}</Text>
+              </Text>
+            </Box>
+            <Box flexDirection="row" width="100%" justifyContent="center">
+              {crab(`fl-${node.id || 'master'}`, node.id, idx, false, bg)}
+            </Box>
+            <Text wrap="truncate-end" color={hex(C.text)}>
+              <Text color={hex(node.st === 'working' ? C.mint : C.dim)}>⏺ </Text>
+              {fit(node.tool, toolMax)}
+            </Text>
+            {(node.msgCountIn > 0 || node.msgCountOut > 0) && (
+              <Text wrap="truncate-end" color={hex(node.inFlightIn > 0 || node.inFlightOut > 0 ? C.yellow : C.cyan)}>
+                {`✉ ↓${node.msgCountIn} ↑${node.msgCountOut}${node.inFlightIn > 0 ? ' · in transit' : ''}`}
+              </Text>
+            )}
           </Box>
         )
       }
@@ -1931,12 +1985,12 @@ export const register: Register = (on, options) => {
                         </Box>
                       )}
                       {conn && (
-                        <Box flexDirection="column" width="100%">
+                        <Box flexDirection="column" alignItems="center" width="100%">
                           {conn.lines.map((ln, lIdx) => (
                             <Text key={`cn-${tier.tier}-${lIdx}`} wrap="truncate-end" color={hex(conn.color)}>{ln}</Text>
                           ))}
                           {conn.activeMsg && (
-                            <Text bold wrap="truncate-end" color={hex(conn.color)}>{`  ${conn.activeMsg}`}</Text>
+                            <Text bold wrap="truncate-end" color={hex(conn.color)}>{conn.activeMsg}</Text>
                           )}
                         </Box>
                       )}
