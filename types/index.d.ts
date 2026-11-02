@@ -2,7 +2,8 @@
 // repeat src/model.ts's BusState structurally. tests/contract.test.ts keeps the two in step.
 declare module 'claude-code' {
   interface McpToolInputs {
-    mcp__crabbus__bus_delegate: { agent: string; prompt: string; description?: string; to?: string; mode?: 'edit' | 'read' }
+    mcp__crabbus__bus_delegate: { agent: string; prompt: string; description?: string; to?: string; mode?: 'edit' | 'read'; cwd?: string }
+    mcp__crabbus__bus_cleanup: { all?: boolean }
   }
   interface PluginState {
     'crabbus': {

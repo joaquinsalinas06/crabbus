@@ -583,6 +583,39 @@ const changes = async ($: EngineInterface, j: Job): Promise<string> => {
     return `Branch: ${j.branch}\nWorktree: ${j.cwd}\nDiffstat:\n${stat.slice(0, 2000) || '(no tracked changes)'}\nUntracked:\n${untracked.slice(0, 2000) || '(none)'}`
   } catch (e) { return `Branch: ${j.branch}; worktree: ${j.cwd}\nChange summary failed: ${String(e)}` }
 }
+const removeWorktree = async ($: EngineInterface, root: string, cwd: string, branch?: string): Promise<boolean> => {
+  try {
+    await hostGit($, root, ['worktree', 'remove', '--force', cwd]).catch(async () => {
+      await $.process.run(['rm', '-rf', cwd]).catch(() => undefined)
+      await hostGit($, root, ['worktree', 'prune']).catch(() => undefined)
+    })
+    if (branch) await hostGit($, root, ['branch', '-D', branch]).catch(() => undefined)
+    await hostGit($, root, ['worktree', 'prune']).catch(() => undefined)
+    return true
+  } catch { return false }
+}
+const gcWorktrees = async ($: EngineInterface, root?: string, forceAll = false): Promise<string[]> => {
+  const cleaned: string[] = []
+  const repoRoot = root ?? (await $.session.cwd().catch(() => undefined))
+  if (!repoRoot) return cleaned
+  const base = (await hostGit($, repoRoot, ['rev-parse', '--show-toplevel']).catch(() => undefined))?.trim()
+  if (!base) return cleaned
+  const worktreesDir = `${base}/.crabbus/worktrees`
+  let entries: FsEntry[] = []
+  try { entries = await $.fs.list(worktreesDir) } catch { return cleaned }
+  const activeCwds = new Set([...jobs.values()].filter(x => x.running || (!forceAll && !x.stopped && x.prepared)).map(x => x.cwd))
+  for (const entry of entries) {
+    const wtPath = `${worktreesDir}/${entry.name}`
+    if (activeCwds.has(wtPath)) continue
+    const ok = await removeWorktree($, base, wtPath)
+    for (const cli of ['agy', 'codex', 'claude']) {
+      await hostGit($, base, ['branch', '-D', `crabbus/${cli}-${entry.name}`]).catch(() => undefined)
+    }
+    if (ok) cleaned.push(entry.name)
+  }
+  await hostGit($, base, ['worktree', 'prune']).catch(() => undefined)
+  return cleaned
+}
 const stopJob = async (j: Job, reason: string): Promise<void> => {
   j.stopped = reason
   j.discarded = (j.discarded ?? 0) + j.queue.length
@@ -627,6 +660,11 @@ const runJob = async ($: EngineInterface, j: Job): Promise<void> => {
       j.cwd = `${root}/.crabbus/worktrees/${j.id}`
       j.branch = `crabbus/${j.cfg.cli}-${j.id}`
       await hostGit($, root, ['worktree', 'add', '--no-track', '-b', j.branch, j.cwd, 'HEAD'])
+      for (const dep of ['node_modules', '.venv']) {
+        if (await $.fs.exists(`${root}/${dep}`)) {
+          await $.process.run(['ln', '-s', `${root}/${dep}`, `${j.cwd}/${dep}`], { timeoutMs: 5000 }).catch(() => undefined)
+        }
+      }
       j.prepared = true
       await record($, s => onExternal(s, j.id, metadata(j)))
     }
@@ -681,6 +719,14 @@ const runJob = async ($: EngineInterface, j: Job): Promise<void> => {
     // a turn that changed nothing because its commands were denied says so, instead of a bare "done"
     const idle = j.mode === 'edit' && /\(no tracked changes\)/.test(summary) && /Untracked:\n\(none\)/.test(summary)
     const warning = !error && !j.stopped && idle && denied.size > 0 ? 'no changes: its commands were denied' : undefined
+    const gc = extConfig.worktreeGc ?? 'idle'
+    if (j.mode === 'edit' && j.prepared && gc !== 'off') {
+      const shouldClean = gc === 'auto' || idle || Boolean(j.stopped)
+      if (shouldClean) {
+        const root = (await hostGit($, j.cwd, ['rev-parse', '--show-toplevel']).catch(() => undefined))?.trim() ?? j.cwd.split('/.crabbus/worktrees')[0]
+        if (root) void removeWorktree($, root, j.cwd, j.branch)
+      }
+    }
     notices.push(JSON.stringify({ agent: j.id, status: j.stopped ? 'killed' : error ? 'failed' : 'done', ...(warning ? { warning } : {}), result, error, discardedQueuedMessages: j.discarded ?? 0, denied: [...denied], ...(error && stderr ? { diagnostic: stderr } : {}), changes: summary }))
     j.discarded = 0
     j.running = false
@@ -693,7 +739,6 @@ const delegate = async ($: EngineInterface, args: Record<string, unknown>): Prom
   const name = typeof args['agent'] === 'string' ? args['agent'] : ''
   const cfg = extConfig.agents[name]
   if (!cfg || !Object.hasOwn(extConfig.agents, name) || !available.has(name)) throw Error(`external agent "${name}" is not configured or available`)
-  if (cfg.cli === 'agy' && cfg.level === 'auto') throw Error(AGY_AUTO_ERROR)
   const prompt = typeof args['prompt'] === 'string' ? args['prompt'].trim() : ''
   if (!prompt || prompt.length > 32000) throw Error('prompt must contain 1 to 32000 characters')
   const target = args['to']
@@ -794,12 +839,19 @@ export const register: Register = (on, options) => {
         if (detected.exitCode === 0) available.add(name)
       } catch { /* unavailable on this host */ }
     }
-    if (available.size) await $.tool.register({
-      name: 'bus_delegate', isDeferred: false,
-      description: `Master only: delegate directly to subscription CLIs: ${[...available].map(name => `${name} (${externalLabel(name, extConfig.agents[name]!)}; ${extConfig.agents[name]?.cli === 'agy' ? 'file tools only, no terminal; follows the external-delegation worker contract; auto unsupported' : 'code tasks'})`).join(', ')}. Edit tasks use isolated worktrees without commits. cwd picks another git repository than the session's. to queues a continuation.`,
-      inputSchema: { type: 'object', properties: { agent: { type: 'string' }, prompt: { type: 'string' }, description: { type: 'string' }, to: { type: 'string' }, mode: { type: 'string', enum: ['edit', 'read'] },
-        cwd: { type: 'string', description: 'Absolute path inside the git repository to work in; defaults to this session\'s. Not allowed with to.' } }, required: ['agent', 'prompt'] },
-    })
+    if (available.size) {
+      await $.tool.register({
+        name: 'bus_delegate', isDeferred: false,
+        description: `Master only: delegate directly to subscription CLIs: ${[...available].map(name => `${name} (${externalLabel(name, extConfig.agents[name]!)}; ${extConfig.agents[name]?.cli === 'agy' ? (extConfig.agents[name]?.level === 'auto' ? 'terminal & file tools; auto level' : 'file tools only, no terminal; follows worker contract') : 'code tasks'})`).join(', ')}. Edit tasks use isolated worktrees with shared dependencies without commits. cwd picks another git repository than the session's. to queues a continuation.`,
+        inputSchema: { type: 'object', properties: { agent: { type: 'string' }, prompt: { type: 'string' }, description: { type: 'string' }, to: { type: 'string' }, mode: { type: 'string', enum: ['edit', 'read'] },
+          cwd: { type: 'string', description: 'Absolute path inside the git repository to work in; defaults to this session\'s. Not allowed with to.' } }, required: ['agent', 'prompt'] },
+      })
+      await $.tool.register({
+        name: 'bus_cleanup', isDeferred: false,
+        description: 'Master only: clean up and prune completed or idle CrabBus git worktrees and branches from .crabbus/worktrees.',
+        inputSchema: { type: 'object', properties: { all: { type: 'boolean', description: 'When true, removes all worktrees from finished jobs, even if they have unmerged changes.' } } },
+      })
+    }
     await $.tool.register({
       name: 'bus_step',
       description: 'For subagents: report your plan and progress to the master (plan, done, current, note, evidence, blocker, question, reply, ack, applied). Cheap; it only records state.',
@@ -836,7 +888,11 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  on('command.run', { command: 'bus' }, async $ => {
+  on('command.run', { command: 'bus' }, async ($, e) => {
+    if (typeof e.args === 'string' && e.args.trim() === 'clean') {
+      const cleaned = await gcWorktrees($, undefined, true)
+      return { text: cleaned.length ? `Pruned ${cleaned.length} worktree(s): ${cleaned.join(', ')}` : 'No stale worktrees to clean.' }
+    }
     autoOpened = true
     await update($, viewAtom, () => 'agents')
     const r = await $.ui.open({ id: PANE, title: TEXT.paneTitle, focus: true, columns: PANE_COLUMNS })
@@ -914,6 +970,23 @@ export const register: Register = (on, options) => {
   on('tool.call', { tool: 'mcp__crabbus__bus_delegate' }, async ($, e) => {
     if (e.agentId) return { result: 'ignored: bus_delegate is for the master.' }
     try { return { result: await delegate($, input(e)) } } catch (error) { return { result: String(error), isError: true } }
+  })
+
+  on('tool.call', { tool: 'mcp__crabbus__bus_cleanup' }, async ($, e) => {
+    if (e.agentId) return { result: 'ignored: bus_cleanup is for the master.' }
+    const args = input(e)
+    const all = args['all'] === true
+    const cwd = await $.session.cwd()
+    const cleaned = await gcWorktrees($, cwd, all)
+    return { result: cleaned.length ? `Pruned ${cleaned.length} worktree(s): ${cleaned.join(', ')}` : 'No stale worktrees to clean.' }
+  })
+
+  on('session.end', async ($, e, next) => {
+    const cwd = await $.session.cwd().catch(() => undefined)
+    if (cwd && (extConfig.worktreeGc ?? 'idle') !== 'off') {
+      await gcWorktrees($, cwd, false).catch(() => undefined)
+    }
+    return next(e)
   })
 
   on('tool.call', { tool: STEP }, async ($, e, next) => {

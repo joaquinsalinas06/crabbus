@@ -11,11 +11,16 @@ const events = (cli: ExternalCli, file: string): ExtEvent[] => {
   return fixture(file).split('\n').flatMap(parse)
 }
 
-test('external config validates limits, names, environment and rejects agy auto before launch', () => {
+test('external config validates limits, names, environment and accepts agy auto', () => {
   assert.deepEqual(externalConfig(undefined).maxConcurrent, 3)
-  for (const raw of ['{', '[]', '{"maxConcurrent":0}', '{"maxMinutes":0}', '{"agents":{"bad":{"cli":"unknown"}}}', '{"agents":{"a":{"cli":"codex","env":{"x":3}}}}']) assert.throws(() => externalConfig(raw))
-  const cfg = externalConfig('{"agents":{"a":{"cli":"agy","level":"auto"}}}')
-  assert.throws(() => externalArgv(cfg.agents.a!, 'task', '/repo', 'edit'), { message: AGY_AUTO_ERROR })
+  assert.equal(externalConfig(undefined).worktreeGc, 'idle')
+  for (const raw of ['{', '[]', '{"maxConcurrent":0}', '{"maxMinutes":0}', '{"agents":{"bad":{"cli":"unknown"}}}', '{"agents":{"a":{"cli":"codex","env":{"x":3}}}}', '{"worktreeGc":"invalid"}']) assert.throws(() => externalConfig(raw))
+  const cfg = externalConfig('{"agents":{"a":{"cli":"agy","level":"auto"}},"worktreeGc":"auto"}')
+  assert.equal(cfg.worktreeGc, 'auto')
+  const argv = externalArgv(cfg.agents.a!, 'task', '/repo', 'edit')
+  assert.ok(argv.includes('--dangerously-skip-permissions'))
+  assert.ok(argv.includes('auto'))
+  assert.ok(externalTaskNote(cfg.agents.a!, 'edit').includes('terminal access'))
 })
 
 test('external repos: listed absolute paths only, matched on whole path segments', () => {

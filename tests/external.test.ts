@@ -2,7 +2,7 @@ import { test, expect, mock } from 'claude-code/testing'
 import type { On, ToolCallInput } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
-const cfg = (extra: Record<string, unknown> = {}) => ({ externalAgents: JSON.stringify({ agents: { coder: { cli: 'codex' }, safe: { cli: 'agy' }, forbidden: { cli: 'agy', level: 'auto' } }, ...extra }), openOnStart: false })
+const cfg = (extra: Record<string, unknown> = {}) => ({ externalAgents: JSON.stringify({ agents: { coder: { cli: 'codex' }, safe: { cli: 'agy' }, auto: { cli: 'agy', level: 'auto' } }, ...extra }), openOnStart: false })
 const start = { cwd: '/repo', surface: 'terminal' as const, isInteractive: true }
 const call = ($: Engine, args: Record<string, unknown>) => $.tool.call({ tool: 'mcp__crabbus__bus_delegate', tool_use_id: 'delegate', ...args } as ToolCallInput)
 const status = async ($: Engine) => String((await $.tool.call({ tool: 'mcp__crabbus__bus_status', tool_use_id: 'status' })).result)
@@ -53,11 +53,11 @@ async function completed($: Engine, n: number) {
   throw Error(await status($))
 }
 
-test('external runner: master-only, agy auto rejection, isolated edit and host diff/untracked notification', { options: cfg() }, async ($, on) => {
+test('external runner: master-only, unknown agent rejection, isolated edit and host diff/untracked notification', { options: cfg() }, async ($, on) => {
   const h = host(on)
   await $.session.start(start)
   expect(result(await call($, { agentId: 'sub', agent: 'coder', prompt: 'edit', description: 'task' }))).toMatch(/for the master/)
-  expect(result(await call($, { agent: 'forbidden', prompt: 'edit', description: 'task' }))).toMatch(/agy auto is not supported yet/)
+  expect(result(await call($, { agent: 'unknown', prompt: 'edit', description: 'task' }))).toMatch(/is not configured/)
   const r = result(await call($, { agent: 'coder', prompt: 'edit', description: 'task' }))
   expect(r).toMatch(/started; the worktree starts from HEAD; 1 uncommitted files are not in it/)
   await completed($, 1)
@@ -269,4 +269,26 @@ test('external runner: a reserved new start cannot be displaced by an older cont
   controls.hold = false
   for (let i = 0; i < 30; i++) { h.waiting.splice(0).forEach(done => done()); await status($) }
   await completed($, 3)
+})
+
+test('external runner: agy auto level launches with dangerously-skip-permissions and auto brief', { options: cfg() }, async ($, on) => {
+  const h = host(on)
+  await $.session.start(start)
+  const r = result(await call($, { agent: 'auto', prompt: 'run tests', description: 'test task' }))
+  expect(r).toMatch(/started/)
+  await completed($, 1)
+  expect(h.launches.length).toBe(1)
+  const argv = h.launches[0]!
+  expect(argv[0]).toBe('agy')
+  expect(argv.includes('--dangerously-skip-permissions')).toBe(true)
+  expect(argv.includes('auto')).toBe(true)
+  const taskPrompt = argv.find(a => a.includes('CrabBus task:'))
+  expect(taskPrompt).toContain('You have terminal access: run tests')
+})
+
+test('external runner: bus_cleanup removes stale worktrees', { options: cfg() }, async ($, on) => {
+  const h = host(on)
+  await $.session.start(start)
+  const res = String((await $.tool.call({ tool: 'mcp__crabbus__bus_cleanup', tool_use_id: 'clean', all: true } as ToolCallInput)).result)
+  expect(res).toMatch(/No stale worktrees to clean|Pruned/)
 })
