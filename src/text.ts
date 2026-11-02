@@ -101,8 +101,16 @@ export const TEXT = {
   importRefused: (details: string) => `Not installed, failed fit check:\n${details}`,
   installedAt: (dest: string, summary: string) => `Installed at ${dest}.\n\n${summary}`,
 
-  // Wardrobe view (hooks/register.tsx, src/panel.ts)
+  // Wardrobe & Flow views (hooks/register.tsx, src/panel.ts, src/flow.ts)
   tabAgents: 'agents',
+  tabFlow: 'flow',
+  flowOpened: 'Topology flow view opened in the side panel.',
+  secTopology: 'TOPOLOGY',
+  secChannels: 'CHANNELS & MESSAGES',
+  dirTopDown: '⇅ top-down',
+  dirLeftRight: '⇄ left-right',
+  noChannelsYet: 'No inter-agent messages yet. Use SendMessage or an architecture skill to connect agents.',
+  flowHints: 'click a node: inspect · d: flip direction (⇅/⇄) · a/f/w: switch tab',
   tellTitle: 'TELL CRABBUS',
   tellHelp: 'Ask for anything in your own words: a new costume ("a pumpkin crab, like the September 2026 meme"), when each one is worn, who is the master. Claude does it with the design skill and looks things up on the web when it needs to. For a picture, paste its file path.',
   tellPlaceholder: 'type here: make me a pumpkin crab…',

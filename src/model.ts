@@ -16,11 +16,23 @@ type Anim = string
 
 export type Status = 'running' | 'done' | 'failed' | 'killed'
 
+export type AgentRole = 'orchestrator' | 'lead' | 'worker' | 'verifier' | 'critic'
+
+export const AGENT_ROLES: readonly AgentRole[] = ['orchestrator', 'lead', 'worker', 'verifier', 'critic']
+
 export type TestRun = { cmd: string; ok: boolean | null; at: number }
 
 export type AgentRec = {
   id: string
   ext?: { cli: 'codex' | 'agy' | 'claude'; profile: string; label?: string; session?: string; worktree?: string; branch?: string }
+  /** Parent subagent id when spawned inside another subagent; absent when spawned by the master. */
+  parentId?: string
+  /** True when spawned as a persistent teammate that wakes on messages. */
+  isTeammate?: boolean
+  /** Declared or assigned architectural role in the topology graph. */
+  role?: AgentRole
+  /** Declared downstream agent names or IDs this agent hands work off to. */
+  next?: string[]
   type: string
   description: string
   name?: string
@@ -75,6 +87,8 @@ export type AgentRec = {
 
 export type BusMsg = {
   id: string
+  /** Sender agent id when sent by a subagent or teammate; absent when sent by the master. */
+  from?: string
   to: string
   text: string
   sentAt: number
@@ -190,7 +204,19 @@ export const uiStatus = (s: BusState, a: AgentRec): UiStatus => {
   return a.inTool ? 'working' : 'thinking'
 }
 
-export type SpawnInfo = { id: string; type: string; description: string; name?: string; model?: string; mode?: string; prompt?: string; kind?: string }
+export type SpawnInfo = {
+  id: string
+  type: string
+  description: string
+  name?: string
+  model?: string
+  mode?: string
+  prompt?: string
+  kind?: string
+  parentId?: string
+  isTeammate?: boolean
+  role?: AgentRole
+}
 
 export const onSpawn = (s: BusState, i: SpawnInfo, now: number, pack: Pack = BUILTIN): BusState => {
   if (s.agents[i.id]) return s
@@ -203,6 +229,9 @@ export const onSpawn = (s: BusState, i: SpawnInfo, now: number, pack: Pack = BUI
     ...(i.name ? { name: clip(i.name, 80) } : {}),
     ...(i.model ? { model: clip(i.model, 80) } : {}),
     ...(i.mode ? { mode: clip(i.mode, 40) } : {}),
+    ...(i.parentId ? { parentId: clip(i.parentId, 80) } : {}),
+    ...(i.isTeammate ? { isTeammate: true } : {}),
+    ...(i.role ? { role: i.role } : {}),
     costume: look.costume,
     ...(look.nickname ? { nickname: look.nickname } : {}),
     by: look.by,
@@ -389,6 +418,8 @@ export type StepInput = {
   ack?: boolean
   applied?: boolean
   reply?: string
+  role?: AgentRole
+  next?: string[]
 }
 
 export const onStep = (s: BusState, id: string, i: StepInput, now: number): BusState => {
@@ -407,6 +438,8 @@ export const onStep = (s: BusState, id: string, i: StepInput, now: number): BusS
       done,
       ...(i.current !== undefined ? { current: clip(i.current, 80) } : {}),
       ...(i.note !== undefined ? { note: clip(i.note, 160) } : {}),
+      ...(i.role !== undefined ? { role: i.role } : {}),
+      ...(i.next !== undefined ? { next: i.next.slice(0, 12).map(n => clip(n, 80)) } : {}),
       declaredAt: now,
       lastEventAt: now,
       evidence,
@@ -439,12 +472,14 @@ const ackOldest = (s: BusState, id: string, applied: boolean, now: number, note?
   return { ...s, msgs }
 }
 
-/** The master's SendMessage call to `to` was observed. `accepted` is whether the tool call went through. */
-export const onSend = (s: BusState, to: string, text: string, accepted: boolean, now: number): BusState => {
+/** A SendMessage call to `to` (from the master or from `from`) was observed. `accepted` is whether the tool call went through. */
+export const onSend = (s: BusState, to: string, text: string, accepted: boolean, now: number, from?: string): BusState => {
   const seq = s.seq + 1
-  const msg: BusMsg = { id: `m${seq}`, to, text: clip(text), sentAt: now, accepted }
+  const fromId = from ? (resolveTarget(s, from) ?? clip(from, 80)) : undefined
+  const msg: BusMsg = { id: `m${seq}`, ...(fromId ? { from: fromId } : {}), to, text: clip(text), sentAt: now, accepted }
   const next = { ...s, seq, msgs: [...s.msgs, msg].slice(-MAX_MSGS) }
-  return s.agents[to] ? log(next, { at: now, id: to, st: 'waiting', g: '✉', text: `message: ${clip(text, 60)}` }) : next
+  const logId = s.agents[to] ? to : fromId && s.agents[fromId] ? fromId : undefined
+  return logId ? log(next, { at: now, id: logId, st: 'waiting', g: '✉', text: `message: ${clip(text, 60)}` }) : next
 }
 
 /** `session.receive` fired for this agent's loop: its oldest accepted, not yet received message arrived (observed). */
@@ -554,6 +589,10 @@ export const parseStep = (raw: Record<string, unknown>): StepInput => {
   if (raw['clear_blocker'] === true) out.clear_blocker = true
   if (raw['ack'] === true) out.ack = true
   if (raw['applied'] === true) out.applied = true
+  const role = raw['role']
+  if (typeof role === 'string' && (AGENT_ROLES as readonly string[]).includes(role)) out.role = role as AgentRole
+  const next = strs(raw['next'], 12)
+  if (next && next.length > 0) out.next = next
   const ev = raw['evidence']
   if (Array.isArray(ev)) {
     const list = ev.flatMap(e => {
