@@ -3,7 +3,7 @@ import type { Usage } from './price.ts'
 
 export type ExternalCli = 'codex' | 'agy' | 'claude'
 export type ExternalAgent = { cli: ExternalCli; model?: string; env?: Record<string, string>; allow?: string[]; level?: 'safe' | 'auto'; label?: string }
-export type ExternalConfig = { maxConcurrent: number; maxMinutes: number; agents: Record<string, ExternalAgent>; repos: string[] }
+export type ExternalConfig = { maxConcurrent: number; maxMinutes: number; agents: Record<string, ExternalAgent>; repos: string[]; worktreeGc?: 'idle' | 'auto' | 'off' }
 export const AGY_AUTO_ERROR = 'agy auto is not supported yet: git fails inside its sandbox, see PR #9'
 const obj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const text = (v: unknown): string => typeof v === 'string' ? v : ''
@@ -54,7 +54,9 @@ export function externalConfig(raw: unknown): ExternalConfig {
   if (!Array.isArray(repos) || repos.some(r => !plainAbsolute(text(r)))) throw Error('externalAgents.repos must list absolute paths without . or .. segments')
   // plugin options may come from settings a repository supplies: a broad root would trust everything
   if (repos.some(r => text(r).split('/').filter(Boolean).length < 3)) throw Error('externalAgents.repos must name repositories, not roots such as / or /Users/name')
-  return { maxConcurrent, maxMinutes, agents, repos: repos.map(r => text(r).replace(/\/+$/, '')) }
+  const worktreeGc = o['worktreeGc'] ?? 'idle'
+  if (worktreeGc !== 'idle' && worktreeGc !== 'auto' && worktreeGc !== 'off') throw Error('worktreeGc must be idle, auto or off')
+  return { maxConcurrent, maxMinutes, agents, repos: repos.map(r => text(r).replace(/\/+$/, '')), worktreeGc: worktreeGc as 'idle' | 'auto' | 'off' }
 }
 
 const plainAbsolute = (p: string): boolean =>
@@ -75,8 +77,7 @@ export const externalLabel = (name: string, cfg: ExternalAgent): string => {
 }
 
 /** The worker contract every Antigravity task carries (skills/external-delegation/SKILL.md explains it to the
- *  master). Headless agy has no one to answer it: shell commands and questions are refused, and a turn
- *  that ends without a final message reaches the master as an empty result. */
+ *  master). Headless agy in safe mode has no one to answer it: shell commands and questions are refused. */
 export const AGY_WORKER_BRIEF = [
   'You are a worker agent under a master reviewer who will verify everything you report. Work alone: nobody can answer you.',
   'Rules:',
@@ -93,14 +94,30 @@ export const AGY_WORKER_BRIEF = [
   '  ## Pending: what is left, or "nothing"',
 ].join('\n')
 
+/** The worker contract for Antigravity in auto mode: terminal commands and test verification are permitted. */
+export const AGY_AUTO_WORKER_BRIEF = [
+  'You are a worker agent under a master reviewer who will verify everything you report. Work alone: nobody can answer you.',
+  'Rules:',
+  '- Stay inside the working directory and the paths the task names. Do not touch lockfiles, generated output or global configuration unless the task asks for it.',
+  '- You have terminal access: run tests, builds, linting and verification commands before reporting.',
+  '- Do not ask questions (ask_question is never answered). When something is ambiguous, pick the most conservative option and record the assumption.',
+  '- Do not commit, push, merge, delete branches or remove the worktree. Leave git commits and merges for the master reviewer.',
+  '- Always finish with a final message in this shape, even when you did nothing:',
+  '  ## Result: what you did, or why you stopped',
+  '  ## Files: each file changed or read, one line each',
+  '  ## Verify: the exact commands you ran and their pass/fail results',
+  '  ## Assumptions and risks',
+  '  ## Pending: what is left, or "nothing"',
+].join('\n')
+
 /** What the task adds for this CLI: Antigravity gets its worker contract; read tasks may not edit. */
-export const externalTaskNote = (cfg: ExternalAgent, mode: 'edit' | 'read'): string =>
-  cfg.cli === 'agy'
-    ? `\n\n${AGY_WORKER_BRIEF}${mode === 'read' ? '\n- This is a read-only task: do not create or edit any file.' : ''}`
-    : ''
+export const externalTaskNote = (cfg: ExternalAgent, mode: 'edit' | 'read'): string => {
+  if (cfg.cli !== 'agy') return ''
+  const brief = cfg.level === 'auto' ? AGY_AUTO_WORKER_BRIEF : AGY_WORKER_BRIEF
+  return `\n\n${brief}${mode === 'read' ? '\n- This is a read-only task: do not create or edit any file.' : ''}`
+}
 
 export function externalArgv(cfg: ExternalAgent, prompt: string, cwd: string, mode: 'edit' | 'read', reported?: string): string[] {
-  if (cfg.cli === 'agy' && cfg.level === 'auto') throw Error(AGY_AUTO_ERROR)
   const session = safeSession(reported)
   const model = cfg.model ? ['--model', cfg.model] : []
   if (cfg.cli === 'codex') return ['codex', 'exec', '--json', '--sandbox', mode === 'edit' ? 'workspace-write' : 'read-only',
@@ -108,11 +125,17 @@ export function externalArgv(cfg: ExternalAgent, prompt: string, cwd: string, mo
     '-C', cwd, ...model, ...(session ? ['resume', session, prompt] : [prompt])]
   // --add-dir: headless agy denies every path outside its workspace and does not adopt the process cwd
   // on its own; --disable-slash-commands: a task that starts with "/" is a task, not a command
-  if (cfg.cli === 'agy') return ['agy', '-p', prompt, '--output-format', 'stream-json', '--mode', mode === 'read' ? 'plan' : 'accept-edits',
-    '--add-dir', cwd, '--disable-slash-commands', ...model, ...(session ? ['--conversation', session] : [])]
+  if (cfg.cli === 'agy') {
+    const isAuto = cfg.level === 'auto'
+    const agyMode = mode === 'read' ? 'plan' : (isAuto ? 'auto' : 'accept-edits')
+    const perms = isAuto ? ['--dangerously-skip-permissions'] : []
+    return ['agy', '-p', prompt, '--output-format', 'stream-json', '--mode', agyMode,
+      ...perms, '--add-dir', cwd, '--disable-slash-commands', ...model, ...(session ? ['--conversation', session] : [])]
+  }
+  const allowed = ['Read', 'Glob', 'Grep', 'TaskCreate', 'TaskUpdate', ...(mode === 'edit' ? ['Edit', 'Write', ...(cfg.allow ?? [])] : [])]
   return ['claude', '-p', prompt, '--output-format', 'stream-json', '--verbose', '--permission-mode', mode === 'read' ? 'plan' : 'acceptEdits', ...model,
     '--settings', CLAUDE_SANDBOX,
-    ...(session ? ['--resume', session] : []), '--allowedTools', 'Read', 'Glob', 'Grep', 'TaskCreate', 'TaskUpdate', ...(mode === 'edit' ? ['Edit', 'Write', ...(cfg.allow ?? [])] : [])]
+    ...(session ? ['--resume', session] : []), '--allowedTools', ...allowed]
 }
 
 export type ExtEvent =

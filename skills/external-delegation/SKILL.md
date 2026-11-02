@@ -11,11 +11,14 @@ have checked it.
 ## Which one
 
 - **Codex** (`codex exec`): has a terminal inside its OS sandbox (`workspace-write` in edit mode,
-  `read-only` in read mode). It can run tests and builds in its worktree, so its `## Verify`-style
-  claims can come with output; still rerun them yourself. Use it for changes that need a
-  compile-test loop.
-- **Antigravity** (`agy`): file tools only, no terminal. Use it for well-specified edits, docs,
-  reviews and second opinions, where you run every check.
+  `read-only` in read mode). Worktrees automatically link root dependencies (`node_modules`, `.venv`),
+  so it can run tests and builds in its worktree without network access. Its `## Verify`-style
+  claims can come with output; still rerun them yourself.
+- **Antigravity** (`agy`):
+  - In `auto` level (`level: "auto"` in config): has terminal access via `--dangerously-skip-permissions`.
+    It can run tests, builds and verification commands directly in the worktree.
+  - In `safe` level (default): file tools only, no terminal. Use it for well-specified edits, docs,
+    reviews and second opinions, where you run every check.
 
 ## Another repository
 
@@ -28,9 +31,9 @@ the person to add it; never work around it by pasting its paths into the prompt.
 
 ## What agy can and cannot do here
 
-- **File tools only.** agy runs headless (`agy -p`): every shell command is denied, and so is any tool
-  that asks for approval. It cannot run tests, builds, git or package managers. Plan the work so the
-  commands are yours.
+- **Safe vs Auto level:**
+  - `level: "safe"` (default): file tools only. Every shell command is denied. Plan the work so commands are yours.
+  - `level: "auto"`: terminal commands and test verification are enabled. agy can execute commands (`run_command`), run tests and report real results.
 - **Its workspace is the job's `cwd`.** CrabBus passes `--add-dir <cwd>`. A path outside it is denied,
   and the turn ends with an empty result and `denied: ["Denied by Antigravity: ViewFile read_file"]`.
   Work in another repository by passing `cwd`, never by pasting absolute paths of another repo.
@@ -39,12 +42,12 @@ the person to add it; never work around it by pasting its paths into the prompt.
   mode does not reliably block writes (antigravity-cli #1181). After a read task, check `git status` of
   that repository.
 - **Edit mode is isolated.** It works in `.crabbus/worktrees/<id>` on its own branch, without commits.
-- **auto level is unsupported** (git fails inside its sandbox).
+  Dependencies (`node_modules`, `.venv`) from the project root are linked into the worktree so tests run smoothly.
+- **Worktree GC:** CrabBus automatically prunes worktrees that finish without changes (`idle`) or get cancelled.
+  Call `bus_cleanup` (or `/bus clean`) to prune completed worktrees when finished.
 
-Every agy task automatically carries the worker contract (`AGY_WORKER_BRIEF` in `src/external.ts`):
-stay in scope, file tools only, no questions, no commits, never claim a command passed, and always end
-with `## Result`, `## Files`, `## Verify`, `## Assumptions and risks`, `## Pending`. Do not repeat it in
-your prompt; write the task.
+Every agy task carries a worker contract (`AGY_WORKER_BRIEF` or `AGY_AUTO_WORKER_BRIEF` in `src/external.ts`):
+stay in scope, no questions, no commits/pushes, and always end with `## Result`, `## Files`, `## Verify`, `## Assumptions and risks`, `## Pending`. Do not repeat it in your prompt; write the task.
 
 # For both
 
