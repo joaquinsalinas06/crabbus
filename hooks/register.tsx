@@ -16,7 +16,7 @@ import type { Usage } from '../src/price.ts'
 import { BUILTIN } from '../src/builtin.ts'
 import { MASTER, direct, emptyDirector, playOf, type Director } from '../src/director.ts'
 import { loadPack } from '../src/fit.ts'
-import { buildFlowGraph, tierConnectors, type FlowDirection, type FlowNode } from '../src/flow.ts'
+import { buildFlowGraph, tierConnectors, type FlowDirection, type FlowNode, type FlowTier } from '../src/flow.ts'
 import { normalizeDesignJson } from '../src/legacy.ts'
 import { AGENT_ROLES, PERSON_DECIDES, onResume, onExternal, describeInput, emptyState, onComplete, onMasterTool, onMeasure, onPermissionAnswer, onPermissionAsk, onReceive, onSend, onSpawn, onStep, onToolEnd, onToolStart, onUsage, parseStep, resolveTarget, statusReport, stepReceipt, type Limit } from '../src/model.ts'
 import type { AgentRec, BusState, Completion, SpawnInfo } from '../src/model.ts'
@@ -1964,39 +1964,157 @@ export const register: Register = (on, options) => {
           {open['flowTopo'] !== false && (
             dir === 'td' ? (
               <Box flexDirection="column" width="100%">
-                {g.tiers.map((tier, tIdx) => {
-                  const nextTier = g.tiers[tIdx + 1]
-                  const conn = nextTier ? tierConnectors(g, tier, nextTier, W) : undefined
-                  const tierIds = new Set(tier.nodes.map(n => n.id))
-                  const peerEdges = g.edges.filter(ed => ed.kind === 'peer' && tierIds.has(ed.from) && tierIds.has(ed.to))
-                  return (
-                    <Box key={`tier-${tier.tier}`} flexDirection="column" width="100%" marginTop={tIdx === 0 ? 0 : 0}>
-                      <Text bold color={hex(C.faint)}>{tier.label}</Text>
-                      <Box flexDirection="row" flexWrap="wrap" gap={1} justifyContent="center" width="100%">
-                        {tier.nodes.map(n => renderFlowNode(n, nodeIdx++, tier.nodes.length))}
+                {(() => {
+                  const gridCardCols = Math.max(22, Math.floor((W - 3) / 2))
+                  const gridCardW = desktop ? '48%' : gridCardCols
+                  const halfArm = Math.max(3, Math.floor(gridCardCols / 2) - 1)
+                  const bar = '─'.repeat(halfArm)
+
+                  const renderTierConnector = (fromTier: FlowTier, toTier: FlowTier, c: ReturnType<typeof tierConnectors>) => {
+                    const fCols = fromTier.nodes.length > 1 && W >= 44 ? 2 : 1
+                    const tCols = toTier.nodes.length > 1 && W >= 44 ? 2 : 1
+
+                    if (fCols === 1 && tCols === 2) {
+                      // Fan-out: 1 node (center) branches into 2 columns
+                      return (
+                        <Box key={`cn-${fromTier.tier}-${toTier.tier}`} flexDirection="column" width="100%" alignItems="center">
+                          <Text color={hex(c.color)}>│</Text>
+                          {c.activeMsg && <Text bold color={hex(c.color)}>{c.activeMsg}</Text>}
+                          <Box flexDirection="row" width="100%" justifyContent="center">
+                            <Box width={gridCardW} flexDirection="row" justifyContent="flex-end">
+                              <Text color={hex(c.color)}>{`┌${bar}`}</Text>
+                            </Box>
+                            <Text color={hex(c.color)}>┴</Text>
+                            <Box width={gridCardW} flexDirection="row" justifyContent="flex-start">
+                              <Text color={hex(c.color)}>{`${bar}┐`}</Text>
+                            </Box>
+                          </Box>
+                          <Box flexDirection="row" width="100%" justifyContent="center" gap={1}>
+                            <Box width={gridCardW} alignItems="center">
+                              <Text color={hex(c.color)}>▼</Text>
+                            </Box>
+                            <Box width={gridCardW} alignItems="center">
+                              <Text color={hex(c.color)}>▼</Text>
+                            </Box>
+                          </Box>
+                        </Box>
+                      )
+                    }
+
+                    if (fCols === 2 && tCols === 1) {
+                      // Fan-in: 2 columns converge into 1 node (e.g. Verifier gate)
+                      return (
+                        <Box key={`cn-${fromTier.tier}-${toTier.tier}`} flexDirection="column" width="100%" alignItems="center">
+                          <Box flexDirection="row" width="100%" justifyContent="center" gap={1}>
+                            <Box width={gridCardW} alignItems="center">
+                              <Text color={hex(c.color)}>│</Text>
+                            </Box>
+                            <Box width={gridCardW} alignItems="center">
+                              <Text color={hex(c.color)}>│</Text>
+                            </Box>
+                          </Box>
+                          <Box flexDirection="row" width="100%" justifyContent="center">
+                            <Box width={gridCardW} flexDirection="row" justifyContent="flex-end">
+                              <Text color={hex(c.color)}>{`└${bar}`}</Text>
+                            </Box>
+                            <Text color={hex(c.color)}>┬</Text>
+                            <Box width={gridCardW} flexDirection="row" justifyContent="flex-start">
+                              <Text color={hex(c.color)}>{`${bar}┘`}</Text>
+                            </Box>
+                          </Box>
+                          {c.activeMsg && <Text bold color={hex(c.color)}>{c.activeMsg}</Text>}
+                          <Text color={hex(c.color)}>▼</Text>
+                        </Box>
+                      )
+                    }
+
+                    if (fCols === 2 && tCols === 2) {
+                      // 2 columns into 2 columns
+                      return (
+                        <Box key={`cn-${fromTier.tier}-${toTier.tier}`} flexDirection="column" width="100%" alignItems="center">
+                          {c.activeMsg && <Text bold color={hex(c.color)}>{c.activeMsg}</Text>}
+                          <Box flexDirection="row" width="100%" justifyContent="center" gap={1}>
+                            <Box width={gridCardW} alignItems="center">
+                              <Text color={hex(c.color)}>│</Text>
+                              <Text color={hex(c.color)}>▼</Text>
+                            </Box>
+                            <Box width={gridCardW} alignItems="center">
+                              <Text color={hex(c.color)}>│</Text>
+                              <Text color={hex(c.color)}>▼</Text>
+                            </Box>
+                          </Box>
+                        </Box>
+                      )
+                    }
+
+                    // 1 column into 1 column
+                    return (
+                      <Box key={`cn-${fromTier.tier}-${toTier.tier}`} flexDirection="column" width="100%" alignItems="center">
+                        <Text color={hex(c.color)}>│</Text>
+                        {c.activeMsg && <Text bold color={hex(c.color)}>{c.activeMsg}</Text>}
+                        <Text color={hex(c.color)}>▼</Text>
                       </Box>
-                      {peerEdges.length > 0 && (
-                        <Box flexDirection="column" alignItems="center">
-                          {peerEdges.map(pe => (
-                            <Text key={`pe-${pe.id}`} wrap="truncate-end" color={hex(pe.inFlight ? C.yellow : C.peach)}>
-                              {`⇄ peer channel: ${pe.fromName} ──✉ (×${pe.msgCount})──► ${pe.toName}${pe.lastText ? ` "${fit(pe.lastText, 22)}"` : ''}`}
-                            </Text>
-                          ))}
-                        </Box>
-                      )}
-                      {conn && (
-                        <Box flexDirection="column" alignItems="center" width="100%">
-                          {conn.lines.map((ln, lIdx) => (
-                            <Text key={`cn-${tier.tier}-${lIdx}`} wrap="truncate-end" color={hex(conn.color)}>{ln}</Text>
-                          ))}
-                          {conn.activeMsg && (
-                            <Text bold wrap="truncate-end" color={hex(conn.color)}>{conn.activeMsg}</Text>
-                          )}
-                        </Box>
-                      )}
-                    </Box>
-                  )
-                })}
+                    )
+                  }
+
+                  return g.tiers.map((tier, tIdx) => {
+                    const nextTier = g.tiers[tIdx + 1]
+                    const conn = nextTier ? tierConnectors(g, tier, nextTier, W) : undefined
+                    const tierIds = new Set(tier.nodes.map(n => n.id))
+                    const peerEdges = g.edges.filter(ed => ed.kind === 'peer' && tierIds.has(ed.from) && tierIds.has(ed.to))
+                    const cols = tier.nodes.length > 1 && W >= 44 ? 2 : 1
+                    const rows: FlowNode[][] = []
+                    for (let i = 0; i < tier.nodes.length; i += cols) {
+                      rows.push(tier.nodes.slice(i, i + cols))
+                    }
+                    return (
+                      <Box key={`tier-${tier.tier}`} flexDirection="column" width="100%" marginTop={tIdx === 0 ? 0 : 0}>
+                        <Text bold color={hex(C.faint)}>{tier.label}</Text>
+                        {rows.map((row, r) => (
+                          <Box key={`tier-${tier.tier}-wrap-${r}`} flexDirection="column" width="100%">
+                            {r > 0 && (
+                              cols === 2 ? (
+                                <Box key={`tier-${tier.tier}-rconn-${r}`} flexDirection="row" width="100%" justifyContent="center" gap={1}>
+                                  <Box width={gridCardW} flexDirection="column" alignItems="center">
+                                    <Text color={hex(C.dim)}>│</Text>
+                                    <Text color={hex(C.dim)}>▼</Text>
+                                  </Box>
+                                  {row.length > 1 ? (
+                                    <Box width={gridCardW} flexDirection="column" alignItems="center">
+                                      <Text color={hex(C.dim)}>│</Text>
+                                      <Text color={hex(C.dim)}>▼</Text>
+                                    </Box>
+                                  ) : (
+                                    <Box width={gridCardW} />
+                                  )}
+                                </Box>
+                              ) : (
+                                <Box key={`tier-${tier.tier}-rconn-${r}`} flexDirection="column" alignItems="center" width="100%">
+                                  <Text color={hex(C.dim)}>│</Text>
+                                  <Text color={hex(C.dim)}>▼</Text>
+                                </Box>
+                              )
+                            )}
+                            <Box key={`tier-${tier.tier}-row-${r}`} flexDirection="row" gap={1} justifyContent="center" width="100%">
+                              {row.map(n => renderFlowNode(n, nodeIdx++, tier.nodes.length))}
+                              {cols === 2 && row.length === 1 && <Box width={gridCardW} />}
+                            </Box>
+                          </Box>
+                        ))}
+                        {peerEdges.length > 0 && (
+                          <Box flexDirection="column" alignItems="center">
+                            {peerEdges.map(pe => (
+                              <Text key={`pe-${pe.id}`} wrap="truncate-end" color={hex(pe.inFlight ? C.yellow : C.peach)}>
+                                {`⇄ peer channel: ${pe.fromName} ──✉ (×${pe.msgCount})──► ${pe.toName}${pe.lastText ? ` "${fit(pe.lastText, 22)}"` : ''}`}
+                              </Text>
+                            ))}
+                          </Box>
+                        )}
+                        {conn && nextTier && renderTierConnector(tier, nextTier, conn)}
+                      </Box>
+                    )
+                  })
+                })()}
                 {g.hasFeedbackLoop && g.feedbackText && (
                   <Box flexDirection="row" borderStyle="round" borderColor={hex(C.mint)} backgroundColor={hex(C.chip)} paddingX={1} marginTop={1}>
                     <Text bold wrap="wrap" color={hex(C.mint)}>{g.feedbackText}</Text>

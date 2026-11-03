@@ -467,7 +467,7 @@ export const tierConnectors = (
       lines: [
         `${pad} │ ${pad}`,
         `┌${bar}┴${bar}┐`,
-        `▼${pad}   ${pad}▼`,
+        `▼${' '.repeat(arm * 2 + 1)}▼`,
       ],
       ...(activeMsg ? { activeMsg } : {}),
       color,
@@ -488,7 +488,7 @@ export const tierConnectors = (
   return {
     lines: [
       `├${bar}┼${bar}┤`,
-      `▼${pad}   ${pad}▼`,
+      `▼${' '.repeat(arm * 2 + 1)}▼`,
     ],
     ...(activeMsg ? { activeMsg } : {}),
     color,
