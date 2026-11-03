@@ -1,6 +1,6 @@
 {
   "name": "crabbus",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Star-topology observability for subagents: observed, declared and verified progress, SendMessage tracking, and animated pixel crabs with shared controls in terminal and Desktop.",
   "author": {
     "name": "joaquins"

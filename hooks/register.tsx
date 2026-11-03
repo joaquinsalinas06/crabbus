@@ -1969,12 +1969,40 @@ export const register: Register = (on, options) => {
                   const conn = nextTier ? tierConnectors(g, tier, nextTier, W) : undefined
                   const tierIds = new Set(tier.nodes.map(n => n.id))
                   const peerEdges = g.edges.filter(ed => ed.kind === 'peer' && tierIds.has(ed.from) && tierIds.has(ed.to))
+                  const cols = tier.nodes.length > 1 && W >= 44 ? 2 : 1
+                  const rows: FlowNode[][] = []
+                  for (let i = 0; i < tier.nodes.length; i += cols) {
+                    rows.push(tier.nodes.slice(i, i + cols))
+                  }
                   return (
                     <Box key={`tier-${tier.tier}`} flexDirection="column" width="100%" marginTop={tIdx === 0 ? 0 : 0}>
                       <Text bold color={hex(C.faint)}>{tier.label}</Text>
-                      <Box flexDirection="row" flexWrap="wrap" gap={1} justifyContent="center" width="100%">
-                        {tier.nodes.map(n => renderFlowNode(n, nodeIdx++, tier.nodes.length))}
-                      </Box>
+                      {rows.map((row, r) => (
+                        <Box key={`tier-${tier.tier}-wrap-${r}`} flexDirection="column" width="100%">
+                          {r > 0 && (
+                            cols === 2 ? (
+                              <Box key={`tier-${tier.tier}-rconn-${r}`} flexDirection="row" width="100%" justifyContent="space-around">
+                                <Box flexDirection="column" alignItems="center" width="48%">
+                                  <Text color={hex(C.dim)}>│</Text>
+                                  <Text color={hex(C.dim)}>▼</Text>
+                                </Box>
+                                <Box flexDirection="column" alignItems="center" width="48%">
+                                  <Text color={hex(C.dim)}>│</Text>
+                                  <Text color={hex(C.dim)}>▼</Text>
+                                </Box>
+                              </Box>
+                            ) : (
+                              <Box key={`tier-${tier.tier}-rconn-${r}`} flexDirection="column" alignItems="center" width="100%">
+                                <Text color={hex(C.dim)}>│</Text>
+                                <Text color={hex(C.dim)}>▼</Text>
+                              </Box>
+                            )
+                          )}
+                          <Box key={`tier-${tier.tier}-row-${r}`} flexDirection="row" gap={1} justifyContent="center" width="100%">
+                            {row.map(n => renderFlowNode(n, nodeIdx++, tier.nodes.length))}
+                          </Box>
+                        </Box>
+                      ))}
                       {peerEdges.length > 0 && (
                         <Box flexDirection="column" alignItems="center">
                           {peerEdges.map(pe => (
